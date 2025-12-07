@@ -613,10 +613,37 @@ Both the ENTRYPOINT and CMD has two formats to provide the instructions.
 		FROM registry.access.redhat.com/ubi8/ubi-minimal:8.5
 		LABEL GREETING="World"
 		ENTRYPOINT echo Hello "${GREETING}"
-	
+
 ---
 
+## STATEFUL CONTAINERS
 
+Containers that must maintain therie state because its data must persist, these containers are called
+*stateful containers* and an example is a database container. Often these container differ from other containers
+that do not need to maintain state exemple API application are called *staeless containers*.
+
+Some database containers can be stateless since there is no need for persistant data example would be
+a memory-based databases.
+
+Compared to stateless containers, stateful containers present the following challenges
+
+- Portability  
+	The ability to move between different environment. Not enought to be able to create a new container
+	in a new environment it must also have up-to-date data.
+- Scalability  
+	To be able to improve performance by increasing the nomber of replicants of a container. Many databases
+	thecnologies are not desinged to have dta operated by more than one databse process at a time.
+- Availability
+	To keep the system working even if one container crashing has another container replica running.
+	Ther are database system include configuration for this Podman does not provide the feature needed
+	for this type of configuration.
+	
+To get portability with stateless containers you must have provide them with a valid state across
+different environments.
+
+Scalability and availability are something that is needed in production environments by using features
+offered by orchestration systeme like OpenShift, Kubernetes, DOcker Swarm, ... along with specicialized
+database operators.
 
 
 

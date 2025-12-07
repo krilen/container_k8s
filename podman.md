@@ -289,10 +289,10 @@ For the complete list of image-related commands, execute 'podman image --help' i
 	It is possible for you to search in the CLI for the different registries that you are connected to
 	by using 'podman search ...'. You get the full container image address and often a description.
 	
-	After you found yor image you can either use 'podman pull ...' or 'podman image pull ...' to get
+	After you found your image you can either use 'podman pull ...' or 'podman image pull ...' to get
 	the container image downloaded to your local storage.  
 	A non-root uses that pulls images are stored in "~/.local/share/containers directory".  
-	While images pulled by root is stored in "/varlib/containers directory".
+	While images pulled by root is stored in "/var/lib/containers directory".
 	
 	To see what container images that exists in iyour local storage use 'podman image ls'. Only a root
 	user can see a root downloaded image container.
@@ -1143,6 +1143,9 @@ way of specifying the mount.
 	
 	'... --mount "type=volume,source=html-vol,destination=/server"
 	Doing a volume mount named "html-vol" attach it to "/server"
+	
+	'... --mount "type=volume,src=postgres-vol,dst=/var/lib/pgsql/data" ..."
+	Simplifiy the mount command
 
 The different TYPES that the "--mount" can use is
 
@@ -1284,8 +1287,10 @@ You can manage volumes by using the 'podman volume ...' command.
 	
 	Doing an inspect on the created volume and you can see where it is locally storred.
 
-For rootless containers, Podman stores tlocal volume data in the 
+For rootless containers, Podman stores local volume data in the 
 $HOME/.local/share/containers/storage/volumes/ directory.
+
+While rootful volumes are stored in "/var/lib/containers/storage/volumes/"
 
 To mount a volume to a container instance is simple. Becase Podman is manages the volume there is no
 need to configure SELinux permissions.
@@ -1319,6 +1324,274 @@ In those cases you can use the tmpfs mount type which means that the data in a m
 does not use the COW file system.
 
 	'podman run ... --mount type=tmpfs,tmpfs-size=512M,destination=/var/lib/pgsql/data ...'
+
+---
+## STATEFUL DATABASE CONTAINERS
+
+### GOOD PRACTICE for DATABASE CONTAINERS
+
+Following practices provides benefits for containerize database processes
+
+- Use the volume instruction in Containerfile
+	When building a custon databse container image use the VOLUME instruction to create a mounting points
+	at the datasbe storage directories. Mount points avoid using the copy-on-write file system which
+	does not perform well with stateful data.
+	
+	When you create a container from an image that uses the VOLUME instruction Podman creates an anonymous
+	volume and attaches it to the container.
+
+- Mount the data directory to a named volume  
+	Use a amed volume to nount the data directory of your databse to add persistence across container recreations.
+	Volumes are also more portable then bind mounts because the source directory does not need to exists
+	in the host machine.
+	
+- Create a database network  
+	If only containereized application access your databse, then there is no need to expose the database
+	to the host network. Omit exposing the database port and use a Podman network to access the database.
+	
+	This will provide better isolation for the datasbe becasue only applications that share the network
+	has access to the database.
+	
+#### Import Database Data
+
+There might be different approaches to load the database with data.
+
+- Database Containers with Data-loading Features  
+	Databse container images usually has a dedicated directory for scripts to initilialize the database.
+	You can mount your database scripts into that directory. These scripts are executed by the database
+	container at crotainer creation or cortainer start.
+	
+	You could also migrate the data from a running database. Some database containers include an export
+	feature to extract the data from the container while the databse is running.
+
+- Load Data with a Database Client  
+	You can load data by using a databse client that is compatible with the database server. Provide
+	the client with a file container containg the data to load the configuration to connect to the
+	database server.
+	
+	You can also migrate the data from a running database. Some database containers include an export
+	feature to extract the data from a container while the databse is running.
+	
+		'podman cp SQL_FILE TARGET_DB_CONTAINER:CONTAINER_PATH'
+		The SQL_FILE is copies the file containing the data from the host to the container.
+		
+		'podman exec -it DATABASE_CONTAINER psql -U DATABASE_USER -d DATABASE_NAME -f CONTAINER_PATH/SQL_FILE'
+		After you have copied the scripts into the container, run the database client command to load
+		the data. For example, for a PostgreSQL database the following command executes the SQL_FILE
+		to create and populate the database.
+		
+		If a database image does not include this feature, then you can create a container that includes
+		a database client, and use this container to load the data
+		
+		'podman run -it --rm -e PGPASSWORD=DATABASE_PASSWORD -v ./SQL_FILE:/tmp/SQL_FILE:Z \  
+		--network DATABASE_NETWORK registry.redhat.io/rhel8/postgresql-12:1-113 psql -U DATABASE_USER \  
+		-h DATABASE_CONTAINER -d DATABASE_NAME -f /tmp/SQL_FILE'
+		Creates an ephemeral container to load data into a PostgreSQL database.
+		This command uses the SELinux option Z to set the SELinux context for the container to have
+		access to the host SQL_FILE.
+		The command also uses the DATABASE_NETWORK network, which allows the psql client in this
+		container to use the DATABASE_CONTAINER name as the hostname for the database container. For
+		the DNS to work, the DATABASE_NETWORK network must have DNS enabled.
+
+- Export Database Data  
+	To export the databse you use the the datasbe backup command present in the database container image.
+	For both PostreQL and MySQL provides commands for this, 'pg_dump' and 'mysqldump'.
+	
+		'podman exec POSTGRESQL_CONTAINER pg_dump -Fc DATABASE -f BACKUP_DUMP'
+		After the backups is done you can copy the dump file out of the datasbase container as backup
+		or import the data in a new container.
+
+---
+
+## PODMAN TROUBLESHOOTING
+
+### Troubleshoot Container Startup
+
+A container might no be able to start successfully for different reasons, like missing configuration,
+file access issue, ... Depedning on the containerized appliaction the process excuted by the container
+can either exit with an error status or keep running in a inconsistent state. Using the "podman ps -a"
+command you can listen all running and exited containers.
+
+If the container is in "Exited" staus then the problem might be in the start-up process. Many applications
+output error information when an issue occurs during startip. To access this information you can use
+'podman logs ...' command. Use the "-f" flaf (follow) to see the logs in real time
+
+	'podman ps -a' ->
+		CONTAINER ID   IMAGE    COMMAND  CREATED    STATUS      PORTS   NAMES
+		b72652504844   ...               28 sec...  Up...               ok_service
+		867f6f559629   ...      /bin...  21 sec...  Exited...   0...    failing_service
+		947259bf2dc3   ...      ngin...  3 sec ...  Up          0...    web
+	
+	See running and exited containers
+	
+	'podman logs web' ->
+		/docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+		/docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
+		/docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+		...
+		2025/12/07 16:46:01 [notice] 1#1: start worker process 24
+		2025/12/07 16:46:01 [notice] 1#1: start worker process 2
+		
+	See the logs that have been outputted by the application
+	
+	'podman logs -f web' ->
+		...
+		... [07/Dec/2025:16:49:20 +0000] "GET /favicon.ico HTTP/1.1" 404 555 ...
+	
+	This will display all output as they appear, "-f" for follow
+
+### Troubleshoot Container Network
+
+Common network issues
+
+- Incorrect post mapping
+- No network access between containers
+- Hostname resolution problems
+
+#### Port Mapping Issues
+
+Developer must distinguish between the following port configuration
+
+- Ports that the application inside the container listens on.
+- Podman port mapping configuration, which maps ports on the host to the application ports inside 
+	the container.
+
+If the port that you assign to the container in the port mapping configuration does not match the application
+port then the containerized application fails to communicate with the host.
+
+Use 'podman port ...' to list the current container port mapping
+
+	'podman port web' -> "80/tcp -> 0.0.0.0:8080"
+	Meaning that the container exposes 80 (the appliacation) cortainer port to the host machine on the 
+	8080 host port to all network interfaces (0.0.0.0), 'podman run ... -p 8080:80 ...'
+
+The application port in use can be verified by listing the open network ports in the running container.
+Use Linux command, like 'ss' (socket statistics) command to list open ports. A socket is the combination
+of port and IP address.
+
+The ss command with different options to filter.
+
+- "-p": Display the process using the socket
+- "-a": Display listening and established connections
+- "-n": Display numeric ports instead of mapped service names
+- "-t": Display TCP sockets
+
+The ss command is executed inside of the container menaing that the command must be installed.
+
+	'podman exec -it web ss -pant' ->
+		State   Recv-Q  Send-Q  Local Address:Port  Peer Address:Port  Process                     
+		LISTEN  0       511     0.0.0.0:80          0.0.0.0:*          users:(("nginx",pid=1,fd=6))
+		LISTEN  0       511     [::]:80             [::]:*             users:(("nginx",pid=1,fd=7))
+	
+	As can seen by the output there is an nginx applicaion that listen on port 80 from any IP 
+	address. This is the port that needs to be exposed from the container and should be mapped to 
+	from the host machine.
+	
+	To make the 'ss' command work in the nginx container I had to install "iproute2"
+	Install with APT: 'apt update' then 'apt install iproute2'
+
+"To reduce the container attack surface, containers usually lack many commands. You can run the host 
+system commands within the container network namespace by using the 'nsenter' command. A container namespace
+is how the Linux kernel isolates a system resource view from the container perspective. For example,
+a container network namespace shows the system's networking stack to the container as if the container
+was the only process using the stack. There are other types of namespaces, but this material is out 
+of scope for the course."
+
+You can target a container namespace by using the 'nsenter -n -t' command with the container process ID (PID).
+
+To get a containers PI you can do an inspect of the container
+
+	'podman inspect web --format "{{.State.Pid}}"' -> "151777"
+	
+	After getting the PID of the container you can use 'nsenter' command. The command must be executed
+	as root.
+	
+	'sudo nsenter -n -t 151777 ss -pant' -> ...
+	The results should be exacly like the above when 'ss' was executed inside of the container.
+
+Containerized applications should listen on the 0.0.0.0 address, which refers to any network interface
+within the container. Using the 127.0.0.1 loopback interface isolates the application from communicating
+outside of the container.
+
+#### Container Network Connectivity Issues
+
+Developers commonly uses Podman networks to isolate contaioner network traffic from the host. If a
+container is not attached to a Podman network it can not use Podman network for communicating with other
+containers. 
+
+You can verify that evry container is using a specific network by using 'podman instect ...'
+
+	'podman inspect web --format="{{.NetworkSettings.Networks}}"' ->
+		map[]
+	
+	The container is NOT connected to a network
+	
+	'podman inspect web --format='"{{.NetworkSettings.Networks}}"' ->
+		map[frontend:0xc00046f0e0]
+	
+	The container is connected to a network named "frontend"
+
+When containers communicate by using Podman networks, there is no port mapping involved.
+
+#### Name Resolution Issues
+
+Through podman networks connectivity for container to container network traffic is provided by using
+IP addresses. But becase IP addresses might chnage hostnames are used to address theses containers.
+Using DNS service translates containers names to IP addresses for network communication. If the network
+in use does not have DNS enabled then containers can not resolve the containers names and cannot communicate.
+
+Use 'podman network inspect ...' to verify that DNS is enabled.
+
+	'podman network inspect frontend | grep -i dns_enabled' -> ""dns_enabled": true,"
+	In the container network "frontend" DNS is enabled.
+
+### Podman Events
+
+When you troubleshoot the first thing you need to gather is information. You can look at logs but they
+might not exists becase they were not produced. If the container had nnever stared there would be no logs.
+In this case you can use events to obtain data. Events provides extra information in addition to the
+container logs.
+
+Podman includes an events system that records activity, monitors objects like containers, images, pods
+and volumes. Podman also tracks events types like create, start, stop, pull and remove. For instances
+with events you can follow when you created a container or pulled an image. Monitor and view ents in
+Podman is done with the 'podman events' command.
+
+For recording events Podman requires a backend logging mechanism by default the logging mechanism used
+is 'journald'. The *event_logger* field in "container.conf" file controls this behavior. The available
+logging methods are file, journald and none.
+
+	'podman info --format {{.Host.EventLogger}}' -> "jourald"
+	Tells that the logging method is journald
+
+To monitor events in Podman, use the 'podman events' command. By default new events are followed as 
+they appear, you can use the flag "--stream=false" to force the command to exit after reading the
+last known event.
+
+	'podman events' ->
+		2025-12-07 20:50:31.710270898 +0100 CET container died ... (image=docker.io/library/nginx:lat...
+		2025-12-07 20:50:31.987680967 +0100 CET container remove ...
+		2025-12-07 20:50:33.801952792 +0100 CET container create ...
+		2025-12-07 20:50:33.777438573 +0100 CET image pull ...
+		2025-12-07 20:50:34.137169919 +0100 CET container init ...
+		2025-12-07 20:50:34.144563538 +0100 CET container start ...
+	
+	You get the information as it happens
+	
+	'podman events --stream=false' ->
+		...
+	
+	You get a very long log I was able to see a month back but the lenght of the history might very
+
+You are able to filter the output if needed. Use "''since" and ''"until" to see past events, these 
+flags enable you to specify a time range for the events.
+
+	'podman events --since 5m --stream=false' ->
+		...
+	
+	See events from the last hour. 
+
+
 
 
 
