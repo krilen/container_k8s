@@ -1526,7 +1526,7 @@ You can verify that evry container is using a specific network by using 'podman 
 	
 	The container is NOT connected to a network
 	
-	'podman inspect web --format='"{{.NetworkSettings.Networks}}"' ->
+	'podman inspect web --format="{{.NetworkSettings.Networks}}"' ->
 		map[frontend:0xc00046f0e0]
 	
 	The container is connected to a network named "frontend"
@@ -1583,20 +1583,62 @@ last known event.
 	
 	You get a very long log I was able to see a month back but the lenght of the history might very
 
-You are able to filter the output if needed. Use "''since" and ''"until" to see past events, these 
+You are able to filter the output if needed. Use "--since" and "--until" to see past events, these 
 flags enable you to specify a time range for the events.
 
-	'podman events --since 5m --stream=false' ->
+	'podman events --since 60m --stream=false' ->
 		...
 	
 	See events from the last hour. 
 
+## REMOTE DEBUGGING CONTAINERS
 
+Debugging applications are an important techbique to find and fix bugs. Instead of using 'print' to
+observe runtime variables using a debugger is more flexiable, the debugging goes quicker with more
+complex situations.
 
+### Debugging without containers.
 
+Many programming languages run-times has bebuggers that can be activated. When activated a debugger
+provides the following
 
+- Attach brakpoints that stops program execution
+- Step through individual application instructions
+- Inspect and modify variables
+-Evaluate custom expressions
 
+For a web-based application a debugger usually attaches on a different port or you may have to do a
+port forward if application and debugger are not on the same host.
 
+### Debugging within containers
+
+Because container are isolated from their host debugging containerized applications requires additional
+steps for connecting a debugger. By default containers does not expose a port so any debug port must
+be forwarded, then the debug server must listen for a remote connection.
+
+As an exaple Node.js debug moe which can be enabled with the "--inspect" flag on the 'node' command.
+By default Node.js debug server binds 127.0.01 on port 9229. To connect a containererized Node.js application
+Node.js application edxpose the container port 9229 on the host machine the debug server must now bind
+ to a non-local interface by using 0.0.0.0 address.
+ 
+### Live Updating code
+
+When doing a debug, developer often does minor changes and observe the result but since containers images
+often include the application code local chnages does not reflect the container image until the developers
+recreates it, with the 'podman build ...' command.
+
+Therefore the solution depends on the ability to perform live code changes on the application. The
+applications run-time must have the ability to change the application without restating the application.
+
+### Debugging With VSCodium
+
+"VSCodium" is an open source version of the "Visual Studio Code" text editor. Both have the ability to
+include a built-in debugger that can connect to variuos run-times debug protocols.
+
+In "VSCodium" developers has defines a launch configuration to attach the "VSCodium" debugger to the
+application.
+
+---
 
 
 
