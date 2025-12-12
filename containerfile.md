@@ -2,7 +2,7 @@
 
 Building a "Containerfile" from Red Hat Academy and how to optimize it.
 
-This Contarinerfile probably does NOT work outside Red Hat Academys lab but it is good info.
+This Containerfile probably does NOT work outside Red Hat Academys lab but it is good info.
 
 ---
 
