@@ -270,6 +270,7 @@ The different perspectives provides different menus categories aand pages for th
 
 - The Administator perspective focus on cluster configuration, deployemnts and operators for the cluster
 	and its running workloads.
+	
 - The Developer perspective focus on creating an running applications.
 
 Also if the OpenShift Virtualization operator is deployed a Virtulization perspective is available, its
@@ -338,6 +339,7 @@ sure that the cange is implemented on all affected nodes.
 The orchestration of MachineConfig changes through the MCO is prioritized alphabetically by zone, by
 using the topology.kubernetes.io/zone node label.
 
+
 ### Identifying Errors from Nodes
 
 Administrators routinely view the logs and connect to the nodes in the cluster by using a terminal.
@@ -357,6 +359,7 @@ This technique is necessary to manage a cluster and to remediate issues that ari
 	Additionally the different tabs on the node shows metrics, events and the nodes YAML definition
 	file.
 
+
 ### Accessing Pod Logs
 
 Admins often looks at Pods logs to assess a deployed pods health or to troubleshoot a pods deployment
@@ -373,6 +376,7 @@ issues.
 	It is not recommended to alter a running pod.  
 	To fix a pod update the pod configuration to reflect the chnage and redeploy the pod.
 
+
 ### Red Hat OpenShift Container Platform Metrics and Alerts
 
 In the OpenShift cluster the HTTP service endpoints provide metric data that are collected to provide
@@ -383,7 +387,7 @@ if something goes wrong. *ServiceMonitor* resource defines how a specific servic
 define a monitor and alert values. *PodMonitor* can be used the same way but for monitor a pod from its
 metrics.
 
-How you define the monitoring alerts can be raised when the metric are polled. IT will continuously compair
+How you define the monitoring alerts can be raised when the metric are polled. It will continuously compair
 the gathered metric and create an alert when the success criteria is not longer met. An example could
 be a web service monitor polling port 80 and if the port becomes invalid the alert is raised. 
 
@@ -397,6 +401,7 @@ be a web service monitor polling port 80 and if the port becomes invalid the ale
 	Alerting data is a key component to help administrators to deliver cluster and application accessibility
 	and functions.
 
+
 ### Kubernetes Events
 
 Events provide a high-level information when logs provide a high detailed view. Events provides information
@@ -409,6 +414,8 @@ Logs provide a deeper level of detail for remediating specific issues.
 - Home -> Events  
 	Shows the events for all projects or for a specific project. You can further filter and search events.
 
+
+
 ## Red Hat OpenShift Container Platform API Explorer
 
 From version 4 OpenShift include the API Explorer feature for users to view the catalog of Kuberentes
@@ -417,6 +424,431 @@ resources types that are available within the cluster.
 - Home -> API Explorer  
 	View and explore the details for resources. Such details include the description, schema, and other
 	metadata for the resource. This feature is helpful for all users, and especially for new administrators.
+
+---
+
+## KUBERNETSES and OPENSHIFT CLI INTERFACE
+
+Red Hat OpenShift Container Platform (RHOCP) - OpenShift
+
+
+### The Kubernetes Command-line Interface
+
+An OpenShift cluster can be managed by the OpenShift web console, 'kubectl' or 'oc' cli. The *kubectl'
+is the native CLI toll for Kubernetes and connects to the Kubernetes API. The 'oc' commands are an upgrade
+to the 'kubectl' commands and it adds specific OpenShhift features.
+
+With 'oc' you are able to create applications and manage the OpenShift projects from the terminal.
+The OpenShift CLI is ideal for
+
+- Working directly with project source code
+- Scripting OpenShift Container Platform operations
+- Managing projects that are restricted by bandwidth
+- When the web console is unavailable
+- Working with OpenShift resources, such as routes and projects
+
+
+#### Kubernetes Command-line Tool
+
+The 'oc' installation also includes an installation of 'kubectl' in CLI.
+
+You can also install the 'kubectl' CLI independently of the 'oc' CLI, the version used must be within
+on minor verion of difference of the cluster, a version of 1.30 for the 'kubectl' can communicate with
+a cluser of version 1.29, 1.30 or 1.31. It is alwasy recommended to use the latest compatable version
+of 'kubectl'.
+
+	'curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"'
+	Download 'kubectl' 
+	
+	'curl -LO "https://dl.k8s.io/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"'
+	Downlaod the checksum
+	
+	'echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check' -> OK / FAILED message
+	Verify the checksum, if fail DO NOT continue
+	
+	'sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl'
+	Install the downloaded verified 
+	
+	'kubectl version --client' -> ...
+	Get the version, flag "---client" prints only the cllient version, skip it to also get server version
+
+Instead of downloading and installing it youself you can use the OS distribution to install the 'kubectl'
+CLI. Since OpenShift is a RedHat product we will use RedHat Enterprise Linux
+
+	'cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo' -> ...
+	Get info if the repo is installad and which version
+	
+	'sudo yum install -y kubectl'
+	Install the 'kubectl' from the repo
+
+To get help using 'kubectl' there is 'kubectl --help' and you can also use help with any option 'kubectl _option_ --help'
+to get detailed information about a command.
+
+	'kubectl --help' ->
+		kubectl controls the Kubernetes cluster manager.
+		...
+		
+	Get help and a list of general option that can be used.
+	
+	'kubectl create --help' -> 
+		Create a resource from a file or from stdin.
+		JSON and YAML formats are accepted.
+		...
+	
+	Get help using 'kubectl' and the "create" option.
+	
+Kubernetes uses many resource components to support applications. The 'kubectl explain' command provides 
+detailed information about the attributes of a given resource.
+
+	'kubectl explain pod' ->
+		KIND:     Pod
+		VERSION:  v1
+		
+		DESCRIPTION:
+		...
+
+Additional documentation can be found at: https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands/ 
+
+
+### The OpenShift Command-line Interface
+
+The 'oc' commands is the main way of interacting with an OpenShift cluster.
+
+It can be downloaded from the OpenShift web colnsle to make sure that it is complatable with the cluster.
+Simply go to "Help -> Command Line tools" (? is the help menu). There are several installations options
+for the 'oc' client and different OS.
+
+The basic usage is 'oc option' with the basic options or subcommands. Since the 'oc' CLI is an upgrade
+or superset from the 'kubectl' the "--help" flag and "explain" options will work for both CLI. But the 'oc'
+will also contain additional commands that are not present in 'kubectl' like 'oc login' or 'oc _project_'.
+
+Users that are familiar with 'kubectl' can use it to manage a OpenShift cluster but some resources are
+specific for the 'oc' like projects, routes and image streams.
+
+
+#### Authentication Methods
+
+Before any interaction with the OpenShift cluster can be done you must authenticate your requests. The
+authentication layer identifies the user that is associated with requests to the OpenShift API. After 
+authentication, theauthorization layer uses information about the requesting user to determine whether
+the request is allowed.
+
+An OpenShift user are allowed to rend request to the API. The user represents an actor that can be granted
+permissions in the system by adding roles to the user or the users groups.
+
+Different types of users can exists
+
+- Regular users  
+	Most interactive users are of this type, a RHOCP (OpenShift) User object represent a regular user.
+- System users  
+	Infrastructure uses system users to interact with the API. Some system users are automatically created,
+	including the cluster administrator with access to everything.  
+	Unauthenticated request use an anonymous system user.
+- Service account  
+	ServiceAccount objects are accounts that allow applications to access the API without sharing regular
+	user credentials. When projects are created service accounts are created automtically. Project administrators
+	are able to create additional service account to define access to the contents of each project.
+
+Each user must authenticate to access a cluster After authentication the police sets what the user is
+authorized to do. 
+
+Using the 'oc login' command autenticate your request and provides role-based authentication and authorization
+that will protect the cluster from unathorized access.
+
+There are several ways of using 'oc login'
+
+**Username and password authentication**
+
+	'oc login -u username api-url'
+	Providing your username and the API url you will be prompted for the password.
+
+**Token-based Authentication**
+
+The OpenShift control plane includes a OAuth server where you can use get a "OAuth access tokens" to
+use to autenticate. This is the recommended method for production environmetsn, automation and CI/CD
+pipelines to skip the password in scripts. 
+
+	'oc login --token=your-token --server=cluster-url'
+
+To get a token go to the web address "https://oauth-openshift.apps.cluster-url/oauth/token/request", click
+on "Display token" to display the login command.
+
+Another way is to login to the web console then click "Help -> command line tools" and click on the link
+"Copy login command" and it will take you to a login page. After login you click "Display token" and
+the infromation will appear.
+
+**Web Authentication**
+
+It is also possible to use the "--web" flag ant then login using a browser. 
+
+	'oc login --web api-url'
+	Will open a browser to the OpenShift autentication page where you can login with username and password.
+	Then the command will return a token to the command line to complete the login.
+
+
+#### Managing Resources at the Command Line
+
+After you have been autenticated to the cluster you are able to do things
+
+- 'oc new-project _project_name_'  
+	Creates a new project that provides an isolation for your applications. In Kubernetes projects are
+	called namespaces, but in OpenShift it also provides additional annotations that provide multitenancy
+	scoping for applications.
+	
+		'oc new-project myapp'
+		Create a new project named "myapp"
+
+Since the 'oc' command is a superset for the 'kubectl' command there are commands that works on both
+Kubernetes and OpenShift resources.
+
+The following 'oc' commads are compatible with 'kubectl' commands.  
+Some command require a user with cluster administrator access.
+
+- 'oc cluster-info'
+	Prints the address of the control plane and other services. 
+
+		'oc cluster-info' ->
+			Kubernetes control plane is running at https://api.ocp4.example.com:6443
+			...
+
+- 'oc api-versions'  
+	The structure of cluster resources has a API version that teh command can display. It will print
+	the supported API version in the form "group/version".
+
+		'oc api-versions' ->
+			admissionregistration.k8s.io/v1
+			...
+
+- 'oc get clusteroperator'  
+	The cluster operators where some have been created automatically during install.
+
+		'oc get clusteroperator' ->
+			NAME                     VERSION    AVAILABLE PROGRESSING DEGRADED SINCE ...
+			authentication           4.18.6     True      False       False    18d
+			baremetal                4.18.6     True      False       False    18d
+			...
+
+- 'oc get ...'  
+	Using the command will retrive infromation about resources in the selected project it only gets the
+	general information about that specific resource type.
+	
+		'oc get pod' ->
+			NAME                          READY   STATUS    RESTARTS   AGE
+			quotes-api-6c9f758574-nk8kd   1/1     Running   0          39m
+			quotes-ui-d7d457674-rbkl7     1/1     Running   0          67s
+			...
+	
+	'oc get _resource_type_ _resource_name_'  
+	Will get you more info about a specific resourse and it can even be exported with the flag
+	"-o yaml" or "-o json"
+
+- 'oc get all'  
+	Get all resources in a project wit their summary information.
+
+		'oc get all' ->
+			...
+			NAME                         READY   STATUS    RESTARTS   AGE
+			pod/mysql-6bb757c595-qj5ng   1/1     Running   0          16s
+
+			NAME            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)              AGE
+			service/mysql   ClusterIP   172.30.173.61   <none>        3306/TCP,33060/TCP   2m21s
+
+			NAME                    READY   UP-TO-DATE   AVAILABLE   AGE
+			deployment.apps/mysql   1/1     1            1           2m21s
+			...
+
+- 'oc describe _resource_type_ _resource_name_'  
+	Provides additional information about a specific resource.
+
+		'oc describe pod mysql-6bb757c595-qj5ng' ->
+			Name:             mysql-6bb757c595-qj5ng
+			Namespace:        mysql-openshift
+			Priority:         0
+			Service Account:  default
+			Node:             master01/192.168.50.10
+			Start Time:       Mon, 16 Jun 2025 16:07:00 -0400
+			Labels:           db=mysql
+			...
+
+- 'oc explain ...'  
+	To get info about API resource objects and their fields.  
+	Add the --recursive flag to display all fields of a resource without descriptions. 
+
+		'oc explain pods.spec.containers.resources'
+			KIND:     Pod
+			VERSION:  v1
+
+			FIELD: resources <ResourceRequiremnts>
+
+			DESCRIPTION:
+				 Compute Resources required by this container. Cannot be updated. More info:
+				 https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+
+				 ResourceRequirements describes the compute resource requirements.
+			...
+
+- 'oc create ...'  
+	Creates a resource in the currect project from a resource definition. The "-f" flaf isused to prvide
+	a file as the definition. 'oc get _resource_type_ _resource_name_ -o yaml' is able to create a yaml
+	file that can act as the resource definition.
+	
+		'oc create -f pod.yaml' -> "pod/quotes-pod created"
+		An example of usage
+
+- 'oc status'  
+	Get a High-level overview of the current project. Shows service, deployments, build configurations, ...
+
+- 'oc delete ...'  
+	Delete an exitsing resource, type and name must be specified.
+	
+		'oc delete pod quotes-ui' -> "pod/quotes-ui deleted"
+		An example of usage
+	
+	Be aware that deleteing a specific resouce might just spawn a new resouce of the same time. It is
+	only when a project is deleted that all resources and applications are deleted.
+
+It is possible to issue commands that are directed to another project and nu the current project.
+You do this by adding the "--n" or "-namespace" flag
+
+	'oc get pods -n myapp2'
+	Get all pods in the project named "myapp2
+
+---
+
+## Inspect Kubernetes Resources Objectives
+
+### Kubernetes and OpenShift Resources
+
+Kubernetes uses the API resource object to represent the intended state of everything in the cluster.
+All administrative tasks require creating,viewing and chaning the API resources. 
+
+	'oc api-resources' ->
+		NAME                    SHORTNAMES   APIVERSION   NAMESPACED   KIND
+		bindings                             v1           true         Binding
+		componentstatuses       cs           v1           false        ComponentStatus
+		configmaps              cm           v1           true         ConfigMap
+		endpoints               ep           v1           true         Endpoints
+		...
+		daemonsets              ds           apps/v1      true         DaemonSet
+		deployments             deploy       apps/v1      true         Deployment
+		replicasets             rs           apps/v1      true         ReplicaSet
+		statefulsets            sts          apps/v1      true         StatefulSet
+		...
+
+	The SHORTNAMES for a object help to shorten the CLI command, 'oc get rs' instead of 'oc get replicasets'
+	
+	The APIVERSION devide the different objects into API groups, format _api-group_ / _api-version_. For
+	_api_group_ object that are blank for Kubernetes core resource objects.
+
+	Many Kuberenets resources exists within a namespace. Kubernetes namespace and OpenShift project 
+	are basically thesame. A one-to-one relationship always exists between the namespace an an OpenShift
+	project.
+
+	The KIND is the formal Kubernetes resource schema type.
+
+	The 'oc api-resources' command can be extended with different flags
+	
+		- "--namespaced=true": specify the namespace
+		- "--api-group appsapps": Limit the resouces in a spcific API group, for core resource use "--api-group"
+		- "--sort-by name": If not empty sort listed resources by the field, "name" or "kind".
+
+	'oc api-resources --namespaced=true --api-group apps --sort-by name' ->
+		NAME                  SHORTNAMES   APIVERSION   NAMESPACED   KIND
+		controllerrevisions                apps/v1      true         ControllerRevision
+		daemonsets            ds           apps/v1      true         DaemonSet
+		deployments           deploy       apps/v1      true         Deployment
+		replicasets           rs           apps/v1      true         ReplicaSet
+		statefulsets          sts          apps/v1      true         StatefulSet
+
+Each resource contains fields that identify the resource or describe the intended configuration of the
+resource. The 'oc explain' command give infotmation about valid fields for an object.
+
+	'oc explain pod' ->
+		KIND:     Pod
+		VERSION:  v1
+
+		DESCRIPTION:
+		 Pod is a collection of containers that can run on a host. This resource is
+		 created by clients and scheduled onto hosts.
+		...
+		
+	You get the possible pod object fields.
+
+Every Kubernetes resource container *kind*, *apiVersion*, *spec* and *status* fileds. But when creating
+an object definition you can leave out the *statu*s field, Kuberenetes generats the *status* field and add 
+runtime status and readiness. The *status* is useful for troubleshooting an error or verify the current
+state of the resource.
+
+	'op explain pod.spec' ->
+		KIND:     Pod
+		VERSION:  v1
+
+		FIELD: spec <PodSpec>
+
+		DESCRIPTION:
+		Specification of the desired behavior of the pod. More info:
+		...
+		
+	By using the dot notation you can infomration about a resurce field. In the above case spec field
+	for the pod resource.  
+
+The following Kubernets main resource types that can be created by using YAML or JSON manifest file,
+or by using OpenShift manamement tools
+
+- Pods (pod)  
+	Represent a collection of containers that share resources, such as IP addresses and persistent storage
+	volumes. It is the primary unit of work for Kubernetes.
+
+- Services (svc)  
+	Define a single IP/port combination that provides access to a pool of pods. By default, services
+	connect clients to pods in a round-robin fashion.
+
+- ReplicaSet (rs)  
+	Ensure that a specified number of pod replicas are running at any given time.
+
+- Persistent Volumes (pv)  
+	Define storage areas for Kubernetes pods to use.
+
+- Persistent Volume Claims (pvc)  
+	Represent a request for storage by a pod. PVCs link a PV to a pod so that its containers can use
+	the provisioned storage, usually by mounting the storage into the container's file system.
+
+- ConfigMaps (cm) and Secrets  
+	Contain a set of keys and values that other resources can use. Configuration maps and secrets centralize
+	configuration values for several resources. Secrets differ from configuration maps in that the values
+	of Secrets are always encoded (not encrypted), and their access is restricted to authorized users.
+
+- Deployment (deploy)  
+	A deployment represents a set of containers that are included in a pod, and the deployment strategies
+	to use. A deployment object contains the configuration to apply to all containers of each pod replica,
+	such as the base image, tags, storage definitions, and the commands to execute when the containers
+	start. Although Kubernetes replicas can be created stand-alone in OpenShift, they are usually created
+	by higher-level resources such as deployment controllers.
+
+Red Hat OpenShift Container Platform (RHOCP) adds the following main resource types to Kubernetes:
+
+- Build (build)  
+	A build is the generic process of taking an input source, such as the source code of an application,
+	and producing a usable resource as the output, such as a runnable image.
+
+- BuildConfig (bc)  
+	A BuildConfig object defines a build process. A BuildConfig object requires at least the source input
+	of the build, the strategy that defines how to build the input, and where to store the output of
+	the process.
+
+- Routes  
+	Represent a DNS hostname that the OpenShift router recognizes as an ingress point for applications
+	and microservices.
+	
+#### Structure of Resources
+
+
+
+
+
+
+
+
 
 
 
