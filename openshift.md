@@ -842,17 +842,218 @@ Red Hat OpenShift Container Platform (RHOCP) adds the following main resource ty
 	
 #### Structure of Resources
 
+Almost every Kubernets object includes 2 nested object fields, the *spec* and *status*. The *spec* object
+describs the intended state of the resource and *status* object describes the current state.  
+You specify the *spec* section of the resoure whe  the object is created. Kubernetes continuously updates
+the *status* section solong as the object exists. The Kubernetes control plane continuously and actively
+manages every objects actual state to get it to the desiered state.
+
+The *status* section has a collection od condition resource object fields
+
+| Field              | Example                    | Description |
+|---                 |---                         | ---         |
+| Type	             | ContainerReady             | The type of the condition |
+| Status             | False                      | The sate of the condition |
+| Reason             | RequirementsNotMet	      | An optional field to provide extra information |
+| Message	         | 2/3 containers are running |	An optional textual description for the condition |
+| LastTransitionTime | 2023-03-07T18:05:28Z       |	The last time that conditions were changed |
+
+As an example, in Kubernetes, a D*Deployment* object can represent an application that is running in the
+cluster. When you create in you might want 3 replicas of the application running. Kuberenetes reads the
+deployment *spec* and starts 3 instances of the application and updated the *status* fields to reflect
+the *spec* object. If something fails Kubernetes will responde to the difference betweeen the *spec* and
+*status* object to make the correction, in this case start a replacement instance.
+
+Other common fields that provide information in the *spec* and *status*.
+
+| Field              | Description |
+| apiVersion	     | Identifier of the object schema version. |
+| kind               | Schema identifier. |
+| metadata.name	     | Creates a label with a name key that other resources in Kubernetes can use to find it. |
+| metadata.namespace | The namespace, or the RHOCP project where the resource is. |
+| metadata.labels ¨  | Key-value pairs that can connect identifying metadata with Kubernetes objects |.
+
+In Kubernetes resources consists of multiple objects. Theses objects define the intended state of the
+object. When creating or modifying an object you make a change in the state, Kubernetes reads the object
+and modifies the current state to match.
+
+All Kuberenets and OpenShift objects can be represented as a JSON or YAML structure.
+
+	YAML format
+	-----
+	apiVersion: v1 #1
+	kind: Pod  #2
+	metadata: #3
+	  name: wildfly  #4
+	  namespace: my_app #5
+	  labels:
+		name: wildfly  #6
+	spec: #7
+	  containers:
+		- resources:
+			limits:
+			  cpu: 0.5
+		  image: quay.io/example/todojee:v1 #8
+		  name: wildfly #9
+		  ports:
+			- containerPort: 8080 #10
+			  name: wildfly
+		  env:  #11
+			- name: MYSQL_DATABASE
+			  value: items
+			- name: MYSQL_USER
+			  value: user1
+			- name: MYSQL_PASSWORD
+			  value: mypa55
+	...
+	status: #12
+	  conditions:
+	  - lastProbeTime: null
+		lastTransitionTime: "2023-08-19T12:59:22Z"
+		status: "True"
+		type: PodScheduled
+	-----
+	
+	Explaination to the YAML above
+	#1: Identifier of the object schema version.
+	#2: Schema identifier. In this example, the object conforms to the pod schema.
+	#3: Metadata for a given resource, such as annotations, labels, name, and namespace.
+	#4: A unique name for a pod in Kubernetes that enables administrators to run commands on it.
+	#5: The namespace, or the RHOCP project that the resource resides in.
+	#6: Creates a label with a name key that other resources in Kubernetes, usually a service, can
+		use to find it.
+	#7: Defines the pod object configuration, or the intended state of the resource.
+	#8: Defines the container image name.
+	#9: Name of the container inside a pod. Container names are important for oc commands when a pod
+		contains multiple containers.
+	#10: A container-dependent attribute to identify the port that the container uses.
+	#11: Defines a collection of environment variables.
+	#12: Current state of the object. Kubernetes provides this field, which lists information such
+		as runtime status, readiness, and container images.
+	
+Labels are key value pairs that are deined in the *.metadata.labels* object path
+
+	kind: Pod
+	apiVersion: v1
+	metadata:
+	  name: example-pod
+	  labels:
+		app: example-pod
+		group: developers
+	...
+
+	The two labels that exists in the above example is "app = example-pod" and "group = developers".
+	Labels are often used to target a a set of objects by using the "-l" or "--selector" flag
+
+	'oc get pod --selector group=developers' -> ...
+	Get the pods that have a specidif label
 
 
+### Command Outputs
+
+Both the 'oc' and 'kubectl' commands have many output formatting options. By default only a small subsets
+of useful fields for the resource in a tabular output is given. By using the flag value "wide" more fields
+are given when using the "-o" flag
+
+| 'oc get pods' | 'oc get pods -o wide | Example value |
+|---            |---                   |--- |
+| NAME	        | NAME	               | example-pod |
+| READY	        | READY	               | 1/1 |
+| STATUS	    | STATUS	           | Running |
+| RESTARTS	    | RESTARTS	           | 5 |
+| AGE	        | AGE	               | 11d |
+|  	            | IP	               | 10.8.0.60 |
+|  	            | NODE	               | master01 |
+|  	            | NOMINATED NODE	   | <none> |
+|  	            | READINESS GATES	   | <none> |
+
+To view all fields that are associated to a resource use the "describe" option. A single object by name,
+or all objects of a type, or provide a name prefix, or a label selector.
+
+The 'describe' option provides a human readable output but this format of output might chnage between
+version and therefore not recommended to be used in scripts.
+
+For scripts the output format should be YAML or JSON that are suitable for parsing.
 
 
+#### YAML output
+
+The "-o yaml" provides a YAML formatted output that can be parsed but still human readable.
+
+	'oc get pods -o yaml' ->
+		apiVersion: v1
+		items:
+		- apiVersion: v1
+		  kind: Pod
+		  metadata:
+			annotations
+		...
+		
+Ther are tools like 'yq' thah can process a YAML output. the 'yq' tool uses dot notaion to seperate
+fields. https://mikefarah.gitbook.io/yq/
+
+	'oc get pods -o yaml | yq ".items[0].status.podIP"' -> "10.8.0.60"
+	The [0] in the example above specifies the first index in an item array
 
 
+#### JSON output
+
+Internally JSON is used in Kubernetes to process resource objects. Use "-o json" to get the output 
+of a resouce in JSON format
+
+	'oc get pods -o json' ->
+		{
+			"apiVersion": "v1",
+			"items": [
+				{
+					"apiVersion": "v1",
+					"kind": "Pod",
+					"metadata": {
+						"annotations": {}
+				}
+			]
+		...
+		}
+
+Also here there are tools to help process the JSON output such as the 'jq' tool (https://jqlang.github.io/jq/)
+
+	'get pods -o json | jq ".items[0].status.podIP"' -> "10.8.0.60"
 
 
+#### Custom output
 
+Kubernetes provides a custom output format that combines the convenience of extracting data via 'jq'
+styled queries with a tabular output format. Use the -o custom-columns option with comma-separated
+<column name> : <jq query string> pairs.
 
+	'oc get pods \
+	-o custom-columns=PodName:".metadata.name",\
+	ContainerName:"spec.containers[].name",\
+	Phase:"status.phase",\
+	IP:"status.podIP",\
+	Ports:"spec.containers[].ports[].containerPort"' -> 
+		PodName                  ContainerName   Phase     IP          Ports
+		myapp-77fb5cd997-xplhz   myapp           Running   10.8.0.60   <none>
 
+Kubernetes also supports JSONPath expressions. It is a query langauge for JSON. JSONPath expressions
+refer to a JSON data structure, they filter and extract formatted fileds from a JSON object
+
+	'oc get pods -o jsonpath='{range .items[]}{"Pod Name: "}{.metadata.name}
+	{"IP: "}{.status.podIP}
+	{"Ports: "}{.spec.containers[].ports[].containerPort}{"\n"}{end}'' ->
+		Pod Name: myapp-77fb5cd997-xplhz
+		IP: 10.8.0.60
+		Ports:
+		
+	The JSONPath expression uses the range operator to iterate over the list of pods to extract the
+	name of the pod, its IP address, and the assigned ports.
+
+You can customize the format of the output with Go templates, which the Go programming language uses.
+Use the -o go-template option followed by a Go template, where Go expressions are inside double braces
+, {{ }}.
+
+	'oc get pods -o go-template='{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'' ->
+		myapp-77fb5cd997-xplhz
 
 ---
 
