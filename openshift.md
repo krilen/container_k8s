@@ -748,7 +748,7 @@ All administrative tasks require creating,viewing and chaning the API resources.
 
 	The 'oc api-resources' command can be extended with different flags
 	
-		- "--namespaced=true": specify the namespace
+		- "--namespaced=true": specify the namespace (or "--namespaced=false"
 		- "--api-group appsapps": Limit the resouces in a spcific API group, for core resource use "--api-group"
 		- "--sort-by name": If not empty sort listed resources by the field, "name" or "kind".
 
@@ -759,6 +759,16 @@ All administrative tasks require creating,viewing and chaning the API resources.
 		deployments           deploy       apps/v1      true         Deployment
 		replicasets           rs           apps/v1      true         ReplicaSet
 		statefulsets          sts          apps/v1      true         StatefulSet
+		
+	'oc api-resources --api-group "" --namespaced=false' ->
+		NAME                  SHORTNAMES   APIVERSION   NAMESPACED   KIND
+		componentstatues      cs           v1           false        ComponentStatus
+		namespace             ns           v1           false        Namespace
+		nodes                 no           v1           false        Node
+		persistentvolumes     pv           v1           false        PersistentVolume
+		
+	Only the core Kubernetes resources (only v1) that have no namespace
+
 
 Each resource contains fields that identify the resource or describe the intended configuration of the
 resource. The 'oc explain' command give infotmation about valid fields for an object.
@@ -839,7 +849,8 @@ Red Hat OpenShift Container Platform (RHOCP) adds the following main resource ty
 - Routes  
 	Represent a DNS hostname that the OpenShift router recognizes as an ingress point for applications
 	and microservices.
-	
+
+
 #### Structure of Resources
 
 Almost every Kubernets object includes 2 nested object fields, the *spec* and *status*. The *spec* object
@@ -855,8 +866,8 @@ The *status* section has a collection od condition resource object fields
 | Type	             | ContainerReady             | The type of the condition |
 | Status             | False                      | The sate of the condition |
 | Reason             | RequirementsNotMet	      | An optional field to provide extra information |
-| Message	         | 2/3 containers are running |	An optional textual description for the condition |
-| LastTransitionTime | 2023-03-07T18:05:28Z       |	The last time that conditions were changed |
+| Message	         | 2/3 containers are running | An optional textual description for the condition |
+| LastTransitionTime | 2023-03-07T18:05:28Z       | The last time that conditions were changed |
 
 As an example, in Kubernetes, a D*Deployment* object can represent an application that is running in the
 cluster. When you create in you might want 3 replicas of the application running. Kuberenetes reads the
@@ -867,11 +878,12 @@ the *spec* object. If something fails Kubernetes will responde to the difference
 Other common fields that provide information in the *spec* and *status*.
 
 | Field              | Description |
+|---                 |---|
 | apiVersion	     | Identifier of the object schema version. |
 | kind               | Schema identifier. |
 | metadata.name	     | Creates a label with a name key that other resources in Kubernetes can use to find it. |
 | metadata.namespace | The namespace, or the RHOCP project where the resource is. |
-| metadata.labels ¨  | Key-value pairs that can connect identifying metadata with Kubernetes objects |.
+| metadata.labels    | Key-value pairs that can connect identifying metadata with Kubernetes objects. |
 
 In Kubernetes resources consists of multiple objects. Theses objects define the intended state of the
 object. When creating or modifying an object you make a change in the state, Kubernetes reads the object
@@ -956,7 +968,7 @@ of useful fields for the resource in a tabular output is given. By using the fla
 are given when using the "-o" flag
 
 | 'oc get pods' | 'oc get pods -o wide | Example value |
-|---            |---                   |--- |
+|---            |---                   |---|
 | NAME	        | NAME	               | example-pod |
 | READY	        | READY	               | 1/1 |
 | STATUS	    | STATUS	           | Running |
@@ -964,8 +976,8 @@ are given when using the "-o" flag
 | AGE	        | AGE	               | 11d |
 |  	            | IP	               | 10.8.0.60 |
 |  	            | NODE	               | master01 |
-|  	            | NOMINATED NODE	   | <none> |
-|  	            | READINESS GATES	   | <none> |
+|  	            | NOMINATED NODE	   | $\lt$none$\gt$ |
+|  	            | READINESS GATES	   | $\lt$none$\gt$ |
 
 To view all fields that are associated to a resource use the "describe" option. A single object by name,
 or all objects of a type, or provide a name prefix, or a label selector.
@@ -1049,13 +1061,445 @@ refer to a JSON data structure, they filter and extract formatted fileds from a 
 	name of the pod, its IP address, and the assigned ports.
 
 You can customize the format of the output with Go templates, which the Go programming language uses.
-Use the -o go-template option followed by a Go template, where Go expressions are inside double braces
-, {{ }}.
+Use the -o go-template option followed by a Go template, where Go expressions are inside double braces,
+{{ }}.
 
 	'oc get pods -o go-template='{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'' ->
 		myapp-77fb5cd997-xplhz
 
 ---
+
+## ASSESS the HEALTH of an OPENSHIFT CLUSTER
+
+### Query Operator Conditions
+
+Operators are important components of Red Hat OpenShift Container Platform (RHOCP). Operators automate
+the required tasks to maintain a healty cluster instead of humans manually doing it. Operators is the
+method used to packaging, deploying and managing services on the control plane.
+
+Operators integrates with the Kubernetes API and CLI tools. They provide the means to monitor applications,
+perform health checks, managing over-the-air (OTA) updates and ensure that appliaction remian in the
+specific state.
+
+CIO-O and kubelet run on every node, almost every cluster function can be managed on the control plane
+by using Operators Components added to the control plane are done so by Operators, including network
+and credential service.
+
+Operators in RHOCP are managed by two different systems, depending on the purpose of the operator.
+
+#### Cluster Version Operator (CVO)
+
+Cluster Operators perform cluster functions, theay are installed by defulat and the CVO manages them.
+
+Cluster Operators use a Kubernetes kind value of *clusteroperators* and can be queried by both 'oc' 
+and 'kubectl'. A user with *cluster-admin* role use the *'oc get clusteroperators'* to list the all
+the cluster Operators.
+
+	'oc get clusteroperators' ->
+		NAME                        VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
+		authentication              4.18.6    True        False         False      3d1h
+		baremetal                   4.18.6    True        False         False      38d
+		cloud-controller-manager    4.18.6    True        False         False      38d
+		cloud-credential            4.18.6    True        False         False      38d
+		...
+
+To get the current staus of the Operatora and more infomation about the operaror use the *describe*
+option. You can also output the infomation in a specific format using the "-o" flag.
+
+#### Operator Lifecycle Manager (OLM) Operators
+
+This is an optional add-on operator that can be accessable for users to run in their applications.
+
+As a cluster-admin role get the a list of all add-on operators
+
+	'oc get operators' ->
+		NAME                                 AGE
+		lvms-operator.openshift-storage      44d
+		metallb-operator.metallb-system      44d
+
+To get more info use *describe* and *get* command
+
+Operators use one or more pods to provide cluster services. ou can find the namespaces for these pods
+under the relatedObjects section of the detailed output for the operator. As a user with a cluster-admin
+role, use the -n namespace option on the get pod command to view the pods. For example, use the following
+get pods command to retrieve the list of pods in the openshift-dns-operator namespace.
+
+	'oc get pods -n openshift-dns-operator' ->
+		NAME                            READY   STATUS    RESTARTS   AGE
+		dns-operator-74bb989655-vgm7t   2/2     Running   18         56d
+
+Use the -o yaml or -o json output formats to view or analyze more details about the pods. The resource
+conditions, which are found in the status for the resource, track the current state of the resource object.
+The following example uses the jq processor to extract the status values from the JSON output details
+for the dns pod.
+
+	'oc get pod -n openshift-dns-operator dns-operator-74bb989655-vgm7t -o json | jq .status' ->
+		{
+		  "conditions": [
+			{
+			  "lastProbeTime": null,
+			  "lastTransitionTime": "2025-07-14T16:04:38Z",
+			  "status": "True",
+			  "type": "PodReadyToStartContainers"
+			},
+		...
+
+In addition to listing the pods of a namespace, you can also use the --show-labels option of the get
+command to print the labels used by the pods. The following example retrieves the pods and their labels
+in the openshift-etcd namespace.
+
+	'oc get pods -n openshift-etcd --show-labels' ->
+		NAME                   READY   STATUS      RESTARTS   AGE   LABELS
+		etcd-master01          5/5     Running     50         56d   app=etcd,etcd=true,k8s-app=etcd,revision=2
+		installer-1-master01   0/1     Completed   0          56d   app=installer
+		installer-2-master01   0/1     Completed   0          56d   app=installer
+
+
+### Examining Cluster Metrics
+
+Another way of see the health of a cluster is to examin the compure resource usage of cluster nodes and
+pods. The 'oc admin ...' command provides this infomration.
+
+	'oc adm top pods -A --sum' ->
+		NAMESPACE                 NAME                      CPU(cores)   MEMORY(bytes)
+		metallb-system            controller-...-fxhh4      2m           43Mi
+		metallb-system            metallb-...-t9pgn         1m           19Mi
+		...output omitted...
+		openshift-storage         topolvm-node-f9rpf        7m           47Mi
+		openshift-storage         vg-manager-q6zhf          1m           21Mi
+				                                           ------       --------
+				                                            3121m       9123Mi
+	
+	Getting the the CPU and memory usage for all pods in the cluster.
+	
+	The "--sum" flag prints the summary of the resources used.
+	
+	The "-A" flag shows all in every namespace. To filter use the "-n" flaf for specific namespaces
+	
+	'oc adm top pods etcd-master01 -n openshift-etcd --containers' ->
+		POD             NAME           CPU(cores)   MEMORY(bytes)
+		etcd-master01   etcd           72m          334Mi
+		etcd-master01   etcd-metrics   8m           31Mi
+		etcd-master01   etcd-readyz    3m           46Mi
+		etcd-master01   etcd-rev       1m           33Mi
+		etcd-master01   etcdctl        0m           0Mi
+	
+	By using the flag "--container" you get the information about each container inside each pod.
+	In the above output you see evevery container in each pod in the namespace "openshift-etcd".
+	
+
+
+#### Viewing Cluster Metrics
+
+In the webconsole have graphs to visualize cluser and resource analytics. Cluser administrator or users
+can either view or cluster-monitoring-view cluster roles. Access by "Home -> Overview" page and it provides
+collection of cluser-wide metrics and provide oa high-level vire of the health of the cluster.
+
+The Overview page has the following metrics.
+
+- Current cluster capacity based on CPU, memory, storage, and network usage
+- A time-series graph of total CPU, memory, and disk usage
+- The ability to display the top consumers of CPU, memory, and storage
+
+
+#### Viewing Project Metrics
+
+The "Project Details" page displays metric that provides an overview of the resources that are used within
+the scope of a specific project.
+
+The "Utilization" section displays useful information about resources, such as CPU and memory.
+
+All metrics are pulled from Prometheus. Clicking on a graph to to to the "Metrics" page to allow you
+to inspect it further.
+
+
+#### Viewing Resource Metrics
+
+When troubleshooting it is useful to view the metric for a resource instead for the whole cluster. You can
+use the "Metric" tab on for a Pod to get information such as CPU, memory, and file-system usage.
+A sudden change in these critical metrics, such as a CPU spike caused by high load, is visible on this page.
+
+
+#### Performing Prometheus Queries in the Web Console
+
+The Prometheus UI is a feature-rich tool for visualizing metrics and configuring alerts. The OpenShift
+web console providea an interface for executing Prometheus queries directly from the web console.
+
+To perform a query, go to Observe → Metrics, enter a Prometheus Query Language expression in the text
+field, and click Run Queries. The results of the query are displayed as a time-series graph.
+
+### Query Cluster Events and Alerts
+
+Instead of Openshift logs that can be hard to read you have OpenShift events that provide a high-level
+logging and auditing. Kubernetes also provides event object in reponse to state changes in the cluster
+object such as nodes, pods, and containers. Events signal significant actions, such as starting a container
+or destroying a pod.
+
+	'oc get events -n openshift-kube-controller-manager' ->
+		LAST SEEN  TYPE    REASON             OBJECT                                MESSAGE
+		75d        Normal  LeaderElection     lease/cert-recovery-controller-lock   master01_...
+		...
+		
+	Getting the events for the namespace "openshift-kube-controller-manager".  You could also use 
+	the "-A" to get all events for all namespaces but it will be hard to read.
+
+After you get the events you could use describe to get more detailed infomation about a resource.
+
+
+#### Kubernetes Alerts
+
+OpenShift includes a monitoring stack based on Prometheus open source project. It is monitoring the core
+cluster componenets by default. You can optionally configure it to monitor user projects.
+
+The components of the monitoring stack are installed in the openshift-monitoring namespace.
+
+	'oc get all -n openshift-monitoring' ->
+		NAME                                              READY  STATUS   RESTARTS AGE
+		pod/alertmanager-main-0                           6/6    Running  48       75d
+		pod/cluster-monitoring-operator-55b4dbf86-mb4xd   1/1    Running  8        75d
+		pod/kube-state-metrics-75455b796c-8q28d           3/3    Running  27       75d
+		pod/prometheus-k8s-0                              6/6    Running  48       75d
+		...
+
+The Prometheus Operator in the openshift-monitoring namespace creates, configures, and manages the Prometheus
+and Alertmanager instances. The "prometheus-k8s-0" entry is the Prometheus pod. 
+ 
+ 	'oc -n openshift-monitoring exec -c prometheus prometheus-k8s-0 \
+ 	-- curl -s  "http://localhost:9090/api/v1/alerts" | jq' -> ...
+ 	
+	A cluster administrator can use the following command to get the alerts from the Prometheus API.
+
+An Alertmanager pod in the openshift-monitoring namespace receives alerts from Prometheus. Alertmanager
+uses alert receivers to send alerts to external notification systems. The "alertmanager-main-0" pod is
+the Alertmanager for the cluster. 
+
+	' oc -n openshift-monitoring exec -c alertmanager alertmanager-main-0 \
+	-- curl -s  "http://localhost:9093/api/v2/alerts" | jq' -> ...
+	
+	Use the curl command to retrieve the fired alerts from the Alertmanager API.
+
+
+### Check Node Status
+
+An OpenShift cluseters have several components at least one control plane and at least one compute node.
+The two componenets can be on a signle node.
+
+	'oc cluster-info' -> ...
+	
+	Verify hight-level that the cluster nodes are running.
+	
+	'oc get nodes' ->
+		NAME       STATUS   ROLES                         AGE   VERSION
+		master01   Ready    control-plane,master,worker   75d   v1.31.6
+
+	To get a more detailed view of the nodes. The above output shows that the single"master01" node
+	is running multiple componenets. The "Status: Ready" means that the node is healty and can accept new
+	pods. "NotReady" means that the node does not accepts new pods.
+
+	As usual you can use "describe" to get more information and format the results with "-o" flag.
+	
+	'oc get et node master01 -o jsonpath= *'{"Allocatable:\n"}{.status.allocatable}{"\n\n"} \ 
+	{"Capacity:\n"}{.status.capacity}{"\n"}'' ->
+	
+	Allocatable:
+	{"cpu":"5500m","ephemeral-storage":"75691125429","hugepages-1Gi":"0",
+	"hugepages-2Mi":"0","memory":"15225452Ki","pods":"250"}
+	
+	Capacity:
+	{"cpu":"6","ephemeral-storage":"83295212Ki","hugepages-1Gi":"0",
+	"hugepages-2Mi":"0","memory":"16376428Ki","pods":"250"}
+	
+	Using "-jsonpath" flag and the "jq" to are the output.
+
+The JSONPath expression in the previous command extracts the allocatable and capacity measures  for the
+master01 node. These measures help to understand the available resources on a node.
+
+View the status object of a node to understand the current health of the node.
+
+	'oc get node master01 -o json | jq ".status.conditions"' ->
+		[
+		  {
+			"lastHeartbeatTime": "2025-08-05T15:32:36Z",
+			"lastTransitionTime": "2025-05-22T12:12:24Z",
+			"message": "kubelet has sufficient memory available",
+			"reason": "KubeletHasSufficientMemory",
+			"status": "False",
+			"type": "MemoryPressure" #1
+		  },
+		  {
+			"lastHeartbeatTime": "2025-08-05T15:32:36Z",
+			"lastTransitionTime": "2025-05-22T12:12:24Z",
+			"message": "kubelet has no disk pressure",
+			"reason": "KubeletHasNoDiskPressure",
+			"status": "False",
+			"type": "DiskPressure" #2
+		  },
+		  {
+			"lastHeartbeatTime": "2025-08-05T15:32:36Z",
+			"lastTransitionTime": "2025-05-22T12:12:24Z",
+			"message": "kubelet has sufficient PID available",
+			"reason": "KubeletHasSufficientPID",
+			"status": "False",
+			"type": "PIDPressure" #3
+		  },
+		  {
+			"lastHeartbeatTime": "2025-08-05T15:32:36Z",
+			"lastTransitionTime": "2025-08-05T14:41:42Z",
+			"message": "kubelet is posting ready status",
+			"reason": "KubeletReady",
+			"status": "True",
+			"type": "Ready" #4
+		  }
+		]
+
+	Explain the putput
+	#1: If the status of the MemoryPressure condition is true, then the node is low on memory.
+	#2: If the status of the DiskPressure condition is true, then the disk capacity of the node is low.
+	#3: If the status of the PIDPressure condition is true, then too many processes are running on the node.
+	#4: If the status of the Ready condition is false, then the node is not healthy and is not accepting pods.
+
+More conditions indicate other potential problems with a node.
+
+| Condition          | Description |
+|---                 |---          |
+| OutOfDisk	         | If true, then the node has insufficient free space on the node for adding new pods. |
+| NetworkUnavailable | If true, then the network for the node is not correctly configured. |
+| NotReady           | If true, then one of the underlying components, such as the container runtime or network, is experiencing issues or is not yet configured. |
+| SchedulingDisabled | Pods cannot be scheduled for placement on the node. |
+
+To get deeper inside into a node you could look att it logs. A cluster administator can use the 'oc adm node-logs'
+command to view the logs. Node logs can conatin sensitive info that is why they are limited to node administartor.
+
+For a single node you can use 'oc adm node-logs _node_name_'.
+
+The logs can be filtered, use 'oc adm node-logs --help' for a complete list of command options.
+
+| Option Example  | Description |
+|---              |--- |
+| "--role master" | Use the --role option to filter the output to nodes with a specified role. |
+| "-u kubelet"    | The -u option filters the output to a specified unit. |
+| "--path=cron"   | The --path option filters the output to a specific process under the /var/logs directory. |
+| "--tail 1"      | Use --tail x to limit output to the last x log entries. |
+
+	'oc adm node-logs master01 -u crio --tail 1' -> ...
+	Getting the most recent log entry for the "cri-o" service on bide "master01".'
+
+When a pod is created with the cli  the 'oc' or 'kubectl' command is sent to the API service which
+validates the command. The *schedulare* service reads the definition and assigns pods to compute nodes.
+Each compute node runs a *kubelet* service that converts the pod manifest to one or more containers in
+the CRI-O runtime.
+
+Each compute node must have an active kubelet service and an active crio service.
+
+	'oc debug node/node-name' (Replace the node-name value with the name of your node.)
+	Start a debug session on the node by using the debug command.
+	
+	chroot /host
+	Within the debug session, change to the /host root directory so that you can run binaries in the
+	host's executable path.
+	
+	'for SERVICES in kubelet crio; do echo ---- $SERVICES ---- ;
+	systemctl is-active $SERVICES ;  echo ""; done' -> 
+	
+		---- kubelet ----
+		active
+		
+		---- crio ----
+		active
+	
+	Using the systemctl is-active calls to confirm that the services are active.
+	
+	'systemctl status kubelet' -> ...
+	For more details about the status of a service, use the systemctl status command.
+
+#### Check Pod Status
+
+You are able to see logs in running containers and pods for troubleshooting.When the container start
+its standard out and standard error are redirected to the container disk. By using the *logs* command
+you can see the containers logs even if it has stopped but the pod must still exists.
+
+	'oc logs pod-name -c container-name'
+	See a containers log in a pod, replace pod-name with the name of the target pod, and replace container-name
+	with the name of the target container.
+	
+	The -c container-name argument is optional, if the pod has only one container. You must use the
+	"-c container-name" argument to connect to a specific container in a multicontainer pod. Otherwise,
+	the command defaults to the only running container and returns the output.
+
+When debugging images and setup issues it is useful to get an exact copy of the running pods configuration
+and then troubleshoot it with a shell. If the pod is failing or does not include a shell the 'exec' option
+might not work. To reolve this use the *debug* command to create a copy of the specific pod and start a
+shell in that.
+
+By defualt the *debug* command start the shell inside the first container of the refrenced pod. The debug
+pod is a copy of the source pod with som extra modifications. Examples of modifications, all labels are
+removed, the default shell is either '/bin/sh' for linux pods or 'cmd.exe'. for Windows containes. Also
+the readiness and liveness probe is disabled.
+
+A normal problem for containers in Pod is security policies that prohibits a container from running as
+root user. You can use the *Debug* command to test running the pod as a nin-root user by using the 
+"--as-user" flag. You could also run a non-root pod as the root user with "--as-root" flag.
+
+The *debug* command you can invoke other types of objects besids pods, any controller resource that 
+creates a pod, deployment, build or job. The 'debug' command also works with nodes, resources that creates
+pods, such as image strem tags. You can also use the "--image=IMAGE" option of the debug command to 
+start a shell session by using a specified image.
+
+	'oc debug'
+	If you do not include a resource type and name, then the debug command starts a shell session into
+	a pod by using the OpenShift tools image.
+
+	'oc debug job/test --as-user=1000000'
+	Example to tess running a job pod as a non-root user
+	
+	'oc debug node/master01' -> 
+		Starting pod/master01-debug-gdmkp ...
+		To use host binaries, run chroot /host
+		Pod IP: 192.168.50.10
+		If you don't see a command prompt, try pressing enter.
+
+		sh-5.1# 'chroot /host'
+		sh-5.1# 
+
+The debug pod is deleted when the remote command completes, or when the user interrupts the shell.
+
+### Collect Information for Support Requests
+
+When opening a support case, it is helpful to provide debugging information about your cluster to Red Hat
+Support. It is recommended that you provide the following information:
+
+- Data gathered by using the 'oc adm must-gather' command as a cluster administrator
+- The unique cluster ID
+
+The 'oc adm must-gather" command collects resource definitions and service logs from your cluster that
+are most likely needed for debugging issues. A pod is created in temporary namespace on the cluster and
+it gathers the debugging information. By default, the oc adm must-gather command uses the default plug-in
+image, and writes into the ./must-gather.local. directory on your local system. To write to a specific
+local directory, you can also use the "--dest-dir" option, such as in the following example:
+
+	'oc adm must-gather --dest-dir /home/student/must-gather'
+	Gather the debug informations
+	
+	'tar cvaf mustgather.tar must-gather/'
+	Create a compressed archive file from the must-gather directory, replace "must-gather/" with the 
+	actual directory path.
+	
+	Then, attach the compressed archive file to your support case in the Red Hat Customer Portal.
+
+Like 'oc adm must-gather' command the 'oc adm inspect'  command gathers information on a specified resource.
+
+	'oc adm inspect clusteroperator/openshift-apiserver clusteroperator/kube-apiserver'
+	Collects debugging data for the openshift-apiserver and kube-apiserver cluster operators.
+	
+	The oc adm inspect command can also use the "--dest-dir" option to specify a local directory to write
+	the gathered information. The command shows all logs by default.
+
+	'oc adm inspect clusteroperator/openshift-apiserver --since 10m'
+	The command shows all logs by default. Use the --since option to filter the results to logs that
+	are later than a relative duration, such as 5s, 2m, or 3h.
+
+---
+
 
 OLD!!!
 
