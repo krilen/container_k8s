@@ -1128,7 +1128,7 @@ get pods command to retrieve the list of pods in the openshift-dns-operator name
 		NAME                            READY   STATUS    RESTARTS   AGE
 		dns-operator-74bb989655-vgm7t   2/2     Running   18         56d
 
-Use the -o yaml or -o json output formats to view or analyze more details about the pods. The resource
+Use the "-o yaml" or "-o json" output formats to view or analyze more details about the pods. The resource
 conditions, which are found in the status for the resource, track the current state of the resource object.
 The following example uses the jq processor to extract the status values from the JSON output details
 for the dns pod.
@@ -1500,6 +1500,387 @@ Like 'oc adm must-gather' command the 'oc adm inspect'  command gathers informat
 
 ---
 
+## CREATE CONTAINERS and KUBERNETES PODS
+
+### Running containers in Pods
+
+Bothe OpenShift and Kubernetes offer many ways of creating containers in pods. Using the CLI tool 'oc' or
+'kunectl' with the "run" option to create and deploy an application from an container image.
+
+Using the "run" option to create single pods for debugging or temporary tasks if fine. But for enterprise
+applicaions using declarative YAML manifests with resources such as deployments with relicasets is the 
+recommended way to ensure ensuring reproducibility and manageability.
+
+	'oc run _resource_/_name_ --image _image_ ...'
+	
+	'oc run web-server --image registry.access.redhat.com/ubi10/httpd-24'
+	Deploy an Apache HTTPD application in a pod named "web-server" using a specific image
+
+With the "run" option you can use many flags. The flag "--command" executes a custom command and its arguments
+inside a container instead of the default comand. The "--command" must be followed by "--" by seperate
+the command from the flags of the "run" option.
+
+	'oc run _resource_/_name_ --image _image_ --command -- cmd arg1 ... argN'
+	Execute a custom command and arguments, ignote the default command in the container image
+
+The "--" can also be used to provide cutom argument to the default command. No "--command" is needed.
+
+	'oc run _resource_/_name_ --image _image_ -- arg1 ... argN'
+	Execute the default command but use other arguments and not the default tones.
+
+To start an interactive session with a container use the flag "-it" before the pods name. "i" stand for
+standard input or interactive and "t" for tty session. Using the "-it" starts a interactive remote shell
+in a container but you need to add additional command to the shell itselft using "--command"
+
+	'oc run -it my-app --image registry.access.redhat.com/ubi10/ubi --command -- /bin/bash'
+	Run an interactive session inside the conatiner to the "/bin/bash" shell.
+
+Always when you run any commands it will be inside the current project or namespace. Add "-n" or "--namespace"
+to do it in a specific namespace or project.
+
+You are abel to define a restart policy for a pod by using the "--restart" flag. A restart policy determins
+how the cluster response the the container in that pod exists there are 3 accepted values or policies.
+
+- Always  
+	The cluster continuously tries to restart a container that exits, whether it exited successfully
+	or with an error. This policy is the default.
+
+- OnFailure  
+	The cluster restarts a container only if it exits with an error.
+
+- Never  
+	The cluster does not try to restart exited or failed containers. Instead, the pods immediately fail
+	and exit.
+
+Example of usage
+
+	'oc run -it my-app --image registry.access.redhat.com/ubi10/ubi --restart Never --command -- date'
+	Executes the 'date' command in a container inside of pod named "my-app". The output of the command
+	is rediected to the output and the Pod will "Never" restart.
+
+Use "--rm" flag to delete a Pod after it exists.
+
+	'oc run -it my-app --rm --image registry.access.redhat.com/ubi10/ubi --restart Never --command -- date' 
+	Same as the one above but the Pods gets deleted after it exits.
+
+Add environmetal variables with the "--env" flag
+
+	'oc run mysql --image registry.redhat.io/rhel9/mysql-80 --env MYSQL_ROOT_PASSWORD=myP@$$123'
+	Adds the environmental value MYSQL_ROOT_PASSWORD=myP@$$123 to the container.
+
+
+### User and Group IDs Assignment
+
+Adding a project OpenShift add annotaions to the project to determin the user ID (UID) range and supplemental 
+group ID (GID) for the pods an their containers. The annotations can be retrived with the "describe"
+option.
+
+	'oc describe project my-app' ->
+		Name:			my-app
+		...
+		Annotations:   openshift.io/description=
+					   openshift.io/display-name=
+					   openshift.io/requester=developer
+					   openshift.io/sa.scc.mcs=s0:c27,c4
+					   openshift.io/sa.scc.supplemental-groups=1000710000/10000
+					   openshift.io/sa.scc.uid-range=1000710000/10000
+		...
+
+The values for supplemental-groups and uid-range use the base/size format. In 1000710000/10000, the 
+1000710000 is the starting ID for the block that is allocated to this project. The 10000number is the
+size of the block. This gives 10000 unique UIDs and GIDs to containers that are running within it starting
+from the base ID of 1000710000.
+
+With OpenShift default security polices a regular user can not choose the USER or UIDs for their container.
+Any USER instruction in the container image are ignored when a regular cluster user creates a Pod. Instead
+a random UID is assigned to the containers orimary process from the uid-renge that is defined in the
+projects annotations.
+
+The primary group IPD (GID) of the process is always 0 which is the root group. The process runs with a
+non-root UID but belongs to the root group, any files or folders that the container writes to must be
+owned by the root group and the group have write permission.
+
+This feature is essential for security. Even if th process in the container belongs to the root group
+its non-root UID makes it an unprivileged account.
+
+When a cluster admin creates a pod the User instructions in the container is processes.  
+Example if the USER instruction for the container image is set to 0 the process in the container runs 
+as the root privileged account, with a UID of 0. This container becomes a security risk, a privileges
+account in a container har unrestricted access to the containers host system. Which means with unrestricted
+access that the container can modify or delete system files, install software or otherwise compromise 
+its host. Red Hat recommends that container are run as rootless or as an unprivileged user with only
+the necessary privileges for the container to run. This is way a distinct block of UID are assigned to
+each project, OpenShift ensures that containers in different project do not run with the same UID.
+
+
+#### Pod Security
+
+Then a pod is created without the a defined security context the Kubernetes Pod Security Admission (PSA)
+ontroller issues a warning. Red Hat OpenShift Container Platform 4.18 integrates the PSA controller which
+enforces security profiles (privileged, baseline, restricted) at the namespace level. These security contexts
+grant or deny OS-level privileges to Pods.
+
+Red Hat OpenShift uses the Security Context Constraints (SCC) controller to provide safe defaults for
+pod security.  SCCs gran tpods the needed premissions to meet the requirementsof the enforced PSA profile.
+
+
+### Execute Commands in Running Containers
+
+To execute a command in a running container you can use the "exec" option in the CLI
+
+	'oc exec _RESOURCE_/_NAME_ -- _COMMAND_ arg1 ...argN ...'
+	The executed command is set to the teminal
+	
+	'oc exec my-app -- date' -> "Tue Feb 21 20:46:50 UTC 2023"
+	Executeing the date command and getting it output in the terminal.
+
+Normally the executed command is executed in the first container in a pod. In a multicontainer pod you
+are able to specify which container to execute the command with the "-c" or "--container" flag
+
+	'oc exec my-app -c ruby-container -- date' -> "Tue Feb 21 20:46:50 UTC 2023"
+	The command "date" is executed in a container named "ruby-container" in a pod named "my-app"
+
+The "exec" option also accepts the "-i" and "-t" flags for an interactive session with a container in
+a pod.
+
+	'oc exec my-app -c ruby-container -it -- bash -il' ->
+		[1000780000@ruby-container /]$
+	
+	Kuberneets sends the stdin to the bash shell in the "ruby-container" container from the "my-app"
+	pod. The stdout and stderr from the shell are sent back to the terminal.
+	
+	This would be considered a shell session directly into the container, raw terminal.
+
+	Now additional commands can be executed in the container.
+	
+		[1000780000@ruby-container /]$ date
+		Tue Feb 21 21:16:00 UTC 2023
+	
+	Executing the 'date' command and get the date.
+	
+		[1000780000@ruby-container /]$ exit
+		
+	Using the 'exit' to terminate the shell terminal to the container
+
+
+### Container Logs
+ 
+Container logs are the standard out (stdout) and stadard error (stderr) output from a container. By using 
+the *logs* option with the pods name you can get them.
+
+The commands have the following flags
+
+| Flag                  | Description |
+|---                    |--- |
+| -l or --selector=""   | Filter objects based on the specified key:value label constraint. |
+| --tail=               | Specify the number of lines of recent log files to display; the default value is -1 with no selectors, which displays all log lines. |
+| -f or --follow        | Follow, or stream, logs for a container. |
+| -c or --container=    | Print the logs of a specific container in a multicontainer pod. If this option is omitted, then logs are shown from the first container that is defined in the pod or from the container that the kubectl.kubernetes.io/default-container annotation on the pod specifies. |
+| -p or --previous=true | Print the logs of a previous container instance in the pod, if it exists. This option is helpful for troubleshooting a pod that failed to start, because it prints the logs of the last attempt. |
+
+	'oc logs postgresql-1-jw89j --tail=10' ->
+		done
+		server stopped
+		Starting server...
+		2023-01-04 22:00:16.945 UTC [1] LOG:  starting PostgreSQL 12.11 on x86_64-redhat-linux-gnu, compiled by gcc (GCC) 8.5.0 20210514 (Red Hat 8.5.0-10), 64-bit
+		2023-01-04 22:00:16.946 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+		2023-01-04 22:00:16.946 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+
+	The output is restricted to the last 10 lines
+
+You are able to use the option *attach* to connect and start an interactive session on a running container
+in a pod. The "-c" for specifying a container are required for a multicontainer pods, if it is not used
+then Kubernetes will use the *kubectl.kubernetes.io/default-container* annotation on the pod to select
+the container otherwise the first container in the pod is chosen.  You can use the interactive session
+to get logs or troubleshoot application issues.
+
+	'oc attach my-app -it' ->
+		If you don't see a command prompt, try pressing enter.
+		bash-4.4$
+
+You can also use the OpenShift webconsole by clicking on the "Logs" tab in a Pod when seeing its details.
+When thare are more than one container in the pod youmust chose which container to view.
+
+
+### Deleting Resources
+
+You can delete resources such as Pods by using the *delete* option. The command can delete resources
+by resource type and name, resource type and label, standard in (stdin) and with JSON and YAML formatted
+files. The command only accept one argument at a time.
+
+	'oc delete pod php-app'
+	Giving the resource type (pod) and the name of the pod to delete the pod.
+	
+	'oc delete pod -l app=my-app'
+	Giving the resource type and the label with the key=value argument "-l app=my=app" to delete the pod.
+	
+	'oc delete pod -f ~/php-app.json'
+	Providing the resource type and a JSON or YAML formatted file. The file specifies the name og the resource.
+	
+	'cat ~/php-app.json | oc delete -f -'
+	You can also use stdin and a JSON or YAML-formatted file that includes the resource type and resource
+	name with the delete command.
+
+You are also able to use the OpenShift web console to delete a pod. In the pods detail you have the
+dropdown "Actions" where you can select "Delete Pod".
+
+Pods support a graceful termination. It means that the pods try to terminate theoir processes first
+before Kubernetes forcibly terminates the Pods. The gracetime before graceful and forcible is 30 sec, to
+change the time you add the flag "--grace-period" and a time in seconds in the delete command.
+
+	'oc delete pod php-app --grace-period=10'
+	Changing the grace period to 10 sec instead of the defalt 30 sec
+	
+	'oc delete pod php-app --now'
+	To shutdown the the pod immediately you can either set the grace period to 1 sec or use "--now" flag.
+	
+	'oc delete pod php-app --force'
+	Forceibly delete a pod with the "--force" flag. If this is done Kubernetes will not wait for confirmation
+	that the pod's process ended, which can leave the pod's process running until the node detect the deletion.
+	
+	Forceibly deleting a pod can result in inconsistency or data loss. Only do this if you are sure 
+	that the pod's processes are terminated.
+	
+	'oc delete pods --all'
+	Delete all pods in a project use the "--all" flag.
+
+To delete a project and all of its resources you can use the *delete* option with the resouce *project*
+
+	'oc delete project my-app'
+	Delete the project named "my-app"
+	
+	Make sure that nothing is still running in the project before doing this.
+
+
+### The CRI-O Container Engine
+
+A container enige is needed to run containers. Worker (Compute) and control plane nodes in a Red Hat OpenShift
+Container Platform cluster use the CRI-O container engine to run containers. The CRI-O container engine
+is a runtime that is desinged and optimized specifically for running in a Kubernets cluster, Docker
+and Podman are NOT. Because CRI-O meets the Kubernetes CRI (Container Runtime Interface) standards the 
+container engine can integrate with other Kubernetes and OpenShift tools, sucj as networking and storage
+plug-ins.
+
+For more information about the Kubernetes Container Runtime Interface (CRI) standards, refer to the 
+CRI-API repository at https://github.com/kubernetes/cri-api.
+
+CRI-O procides a CLI interface to manage containers using the *'crictl'* command. AS with the other container
+CLIs it has different options (subcommands) that can be used.
+
+| Command        | Description |
+|---             |--- |
+| crictl pods    | List all pods on a node. |
+| crictl image   | List all images on a node. |
+| crictl inspect | Retrieve the status of one or more containers. |
+| crictl exec    | Run a command in a running container. |
+| crictl logs    | Retrieve the logs of a container. |
+| crictl ps      | List running containers on a node. |
+
+To manage containers with the *crictl* command you need to identify the node that is running your containers.
+
+	'oc get pods -o wide' ->
+		NAME                READY STATUS    RESTARTS AGE IP        NODE
+		postgresql-1-8lzf2  1/1   Running   0        20m 10.8.0.64 master01
+		postgresql-1-deploy 0/1   Completed 0        21m 10.8.0.63 master01
+
+	'oc get pod postgresql-1-8lzf2 -o jsonpath="{.spec.nodeName}{"\n"}"' -> "master01"
+	
+	In both above ways you can see thet the node running the pod "postgresql-1-8lzf2" is "master01"
+
+After you are aware of which node you must connect to it as acluster administartor. Cluster administrators
+can use SSH to connect to a node or create a debug pod for the node. Regular users can not connect or
+create debug pods for cluster nodes.
+
+As a cluster administrator you can create a debug pod for the node with *'oc debug node ...'* command. 
+OpenShift will create a debug-pod in your current selected project and automatically connect you to the
+pod. Then you must enable access host binaries (*crictl* tool) with 'chroot /host' command. This command
+will mount the hostäs root file system in the "/host" directory within the debug pod shell. By changing
+the root directory to the /host directory you  are able to run binaries contained in the hosts's executable
+path.
+
+	'oc debug node/master01'
+		Starting pod/master01-debug
+		...
+		If you don't see a command prompt, try pressing enter.
+		sh-4.4# 'chroot /host'
+
+After enabling host binaries you can use the 'crictl' command to manage the containes on the node.
+
+	'crictl ps --name postgresql' ->
+		CONTAINER     IMAGE        CREATED STATE   NAME       ATTEMPT POD ID      POD
+		27943ae4f3024 image...7104 5...ago Running postgresql 0       5768...f015 po...
+	
+	Using 'crictl ps' command to get the process PID of a running container. To find the PID of a running
+	container, you must first determine the container's ID. You can use the 'crictl ps' command with the
+	"--name" flag to filter the command output to a specific container.
+	
+	'crictl ps --name postgresql -o json | jq .containers[0].id' -> "2794...29a4"
+	The default output of 'crictl' is a table. You can find the shorter container ID and use it to find
+	the PID of the running container. But you can use "-o" or "--output" falgs to specify a format and
+	then parse the output.
+
+Having the Containers ID you can now find the process ID (PID) of that container by using the 'crictl inspect'
+
+	'crictl inspect 27943ae4f3024 | grep pid' -> "43453"
+	A simple grep on the output of 'crictl inspect'
+	
+	'crictl inspect -o json 27943ae4f3024 | jq .info.pid' -> "pid": 43453,
+	Using a formatted output and parsing it
+	
+	'crictl inspect --output go-template --template "{{.info.pid}}" 27943ae4f3024' -> "43453"
+	Alternative using the build-in methods as the go-templat option to parse out the ID without using
+	any external tools
+
+Last you can now list the namespaces of the container by specifying the PID och the container.
+
+	'lsns -p 43453' ->
+		NS 			TYPE	NPROCS	PID		USER		COMMAND
+		4026531835	cgroup	530		1 		root		/usr/lib/systemd/systemd --switche...
+		4026531837	user	530		1		root		/usr/lib/systemd/systemd --switche...
+		4026537853	uts		8		43453	1000690000	postgres
+		4026537854	ipc		8		43453	1000690000	postgres
+		4026537856	net		8		43453	1000690000	postgres
+	
+	Using 'lsns' and a specified PID
+	
+	'nsenter -t 43453 -p -r ps -ef' ->
+		UID          PID    PPID  C STIME TTY          TIME CMD
+		1000690+       1       0  0 18:49 ?        00:00:00 postgres
+		1000690+      58       1  0 18:49 ?        00:00:00 postgres: logger
+		1000690+      60       1  0 18:49 ?        00:00:00 postgres: checkpointer
+		1000690+      61       1  0 18:49 ?        00:00:00 postgres: background writer
+		1000690+      62       1  0 18:49 ?        00:00:00 postgres: walwriter
+		1000690+      63       1  0 18:49 ?        00:00:00 postgres: autovacuum lau...
+		1000690+      64       1  0 18:49 ?        00:00:00 postgres: stats collector
+		1000690+      65       1  0 18:49 ?        00:00:00 postgres: logical replic...
+		root        7414       0  0 20:14 ?        00:00:00 ps -ef
+	
+	Using 'nsenter' command togheter with the PID to eneter a specific namespace of a running container.
+	
+	For example, you can use the nsenter command to execute a command within a specified namespace on
+	a running container. The following example executes the ps -ef command within the process namespace
+	of a running container.
+	
+	'nsenter -t 43453 -a ps -ef'
+		UID          PID    PPID  C STIME TTY          TIME CMD
+		1000690+       1       0  0 18:49 ?        00:00:00 postgres
+		1000690+      58       1  0 18:49 ?        00:00:00 postgres: logger
+		1000690+      60       1  0 18:49 ?        00:00:00 postgres: checkpointer
+		1000690+      61       1  0 18:49 ?        00:00:00 postgres: background writer
+		1000690+      62       1  0 18:49 ?        00:00:00 postgres: walwriter
+		1000690+      63       1  0 18:49 ?        00:00:00 postgres: autovacuum lau...
+		1000690+      64       1  0 18:49 ?        00:00:00 postgres: stats collector
+		1000690+      65       1  0 18:49 ?        00:00:00 postgres: logical replic...
+		root       10058       0  0 20:45 ?        00:00:00 ps -ef
+	
+	The -t option specifies the PID of the running container as the target PID for the nsenter command.
+	The -p option directs the nsenter command to enter the process or pid namespace. The -r option sets
+	the top-level directory of the process namespace as the root directory, thus enabling commands to
+	execute in the context of the namespace. You can also use the -a option to execute a command in all
+	of the container's namespaces.
+
+
+---
 
 OLD!!!
 
