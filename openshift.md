@@ -1500,7 +1500,7 @@ Like 'oc adm must-gather' command the 'oc adm inspect'  command gathers informat
 
 ---
 
-## CREATE CONTAINERS and KUBERNETES PODS
+## CREATE LINUX CONTAINERS and KUBERNETES PODS
 
 ### Running containers in Pods
 
@@ -1879,8 +1879,585 @@ Last you can now list the namespaces of the container by specifying the PID och 
 	execute in the context of the namespace. You can also use the -a option to execute a command in all
 	of the container's namespaces.
 
+---
+
+## FIND AND INSPECT CONTAINER IMAGES
+
+### Container Image Overview
+
+A container is an isolated runtime envrionment where applications are executed as isolated processes.
+The isolation of the runtime envrionment makes sure that the application do not affect other containers
+or system processes.
+
+A container image containe the package version of the application with all of it dependencies for it
+to be able to run. Images can exists without containers but containers depend om images. A container
+uses a container imageto build the runtime environment to execute the applications.
+
+Container can be split into
+
+- Container images  
+	Contains the immutable data that defines the application and it needed libraries
+
+- Container instance  
+	The running of the container image that are isolated by a set of kernel namespaces
+
+A container image can be reused many times to create a container instance.
+
+
+### Container Image Registries
+
+Image registries are services that offer container images to download. Image creators and maintainers
+can store and distribute container images in a controlled manner for public or private use.
+
+
+#### Red Hat Registry
+
+Red Hat distributes container images through the Red Hat Ecosystem Catalog, https://catalog.redhat.com/,
+which provides a centralized searching utility. 
+
+Because the Red Hat Ecosystem Catalog also contains software products other than container images, go
+to https://catalog.redhat.com/software/containers/explore to search for specific container images.
+
+The Red Hat internal security team validates all images in the container catalog. Red Hat rebuilds all
+components to avoid known security vulnerabilities.
+
+Red Hat container images provide the following benefits:
+
+- Trusted source: All container images use sources that Red Hat knows and trusts.
+- Original dependencies: None of the container packages are altered, and they include only known libraries.
+- Vulnerability-free: Container images are without known critical vulnerabilities in the platform components
+	or layers.
+- Runtime protection: All applications in container images run as non-root users to minimize the exposure
+	surface to malicious or faulty applications.
+- Red Hat Enterprise Linux (RHEL) compatible: Container images are compatible with all RHEL platforms, 
+	from bare metal to cloud.
+- Red Hat support: Red Hat commercially supports the container images in the catalog.
+
+
+#### Quay.io
+
+Although the Red Hat Registry stores only images from Red Hat and certified providers, you can store your
+own images with Quay.io, which is another public image registry that Red Hat sponsors. 
+
+
+#### Private Registries
+
+Image creators or maintainers can choose to make their images publicly available. However, other image
+creators might prefer to keep their images private, for the following reasons:
+
+- Company privacy and protection of secrets
+- Legal restrictions and laws
+- Avoidance of publishing images in development
+
+In some cases, private images are preferred. Private images are more secure than images in public registries.
+Private registries give image creators control over image placement, distribution, and usage.
+
+
+#### Public Registries
+
+Other public registries, such as Docker Hub and Amazon ECR, are also available for storing, sharing,
+and consuming container images. These registries can include official images that the registry owners
+or the registry community users create and maintain. 
+
+Consuming container images from public registries brings risks. 
+
+Before you use a container image from a public registry, review and test the container image for your
+environment.
+
+
+### Container Image Identifiers
+
+Several objects provide identifying information about a container image.
+
+- Registry  
+	The server that stores and shares congainer images. Containe one or more repositories that contains
+	tagged container images.
+	
+- Name  
+	Identifies the container image repository (on the server).
+	
+- Tag  
+	Is a label for the container image in the repository to provide a unique identifier for containers
+	with the same name. Is often usesd as the version for the container image. It is seperated from 
+	the name by a ":".
+	
+Example registry.com/hello/world:v23  
+
+- "registry.com/hello": the server and the account or folder on the server where the container 
+	image is stored
+- "world": the image name
+- "v23": the tag for tis specific image. Combined with the name gets you a unique container image
+
+There is one thing left when it comes to identifying information about a container image.
+
+- ID or Hash  
+	Is a SHA code to locate, pull or verify an image within the regisry. It can not be chnaged and it
+	references the same container image content.
+
+
+### Container Image Components
+
+A container image is composed of multiple components
+
+- Layers  
+	Container images are created from instructions, each instructions adds a layer to the container image,
+	each layer consists of the differences between it and the previous layer. Layers are stacked on each
+	other.
+	
+- Metadata  
+	Includer the instructions and documentations for a container image.
+
+
+### Container Image Instructions and Metadata
+
+Container images consists of instructions or steps and metadata for building the image. They can be
+overridden during container creation to adjust the container image to fit the needs.
+
+Instructions
+
+- ENV  
+	Defines the available environment variables in the container. A container image might include multiple
+	ENV instructions. Any container can recognize additional environment variables that are not listed
+	in its metadata.
+
+- ARG  
+	Defines build-time variables, typically to make a customizable container build. Developers commonly
+	configure the ENV instructions by using the ARG instruction. ARG is useful for preserving the build-time
+	variables for run time.
+
+- USER  
+	Defines the active user in the container. Later instructions run as this user. It is a good practice
+	to define a user other than root for security purposes. OpenShift does not honor the user in a container
+	image, for regular cluster users. Only cluster administrators can run containers (pods) with their
+	chosen user IDs (UIDs) and group IDs (GIDs).
+
+- ENTRYPOINT  
+	Defines the executable to run when the container is started.
+
+- CMD  
+	Defines the command to execute when the container is started. This command is passed to the executable
+	that the ENTRYPOINT instruction defines. Base images define a default ENTRYPOINT executable, which
+	is usually a shell executable, such as Bash.
+
+- WORKDIR  
+	Defines the current working directory within the container. Later instructions execute within this
+	directory.
+
+	Metadata is used for documentation purposes, and does not affect the state of a running container.
+	You can also override the metadata values during container creation.
+
+The following metadata is for information only, and does not affect the state of the running container:
+
+- EXPOSE  
+	Specifies the network port that the application binds to within the container. This metadata does
+	not automatically bind the port on the host, and is used only for documentation purposes.
+
+- VOLUME  
+	Defines where to store data outside the container. The value shows the path where your container
+	runtime mounts the directory inside the container. More than one path can be defined to create multiple volumes.
+
+- LABEL  
+	Defines a key-value pair in the metadata of the image for organization and image selection.
+
+Container engines are not required to honor metadata in a container image, such as USER or EXPOSE. 
+A container engine can also recognize additional environment variables that are not listed in the
+container image metadata.
+
+
+### Base Images
+
+Is the container image form which a container image is built upon. Depending of which base image you use
+it is based upon a Linux distribution and with it have different componenets.
+
+- Package manager
+- Init system
+- File-system layout
+- Preinstalled dependencies and runtimes
+
+The base image can also influence factors such as image size, vendor support, and processor compatibility.
+
+#### Red Hat images
+
+Red Hat base images are created to the base operating system layer for container images. These images 
+are intended to be a common staring point for containers and is known as universal base images (UBI).
+Red Hat images are OCI compliant and contain portions of Red Hat Enterprise Linux. Uses DNF repositories
+to add applications dependencies.
+
+Different types of UBI images are provided free by Red Hat, all images uses RHEL at it core and are available
+from the Red Hat Container Catalog. The differences are
+
+- Standard  
+	This image is the primary UBI, which includes DNF, systemd, and utilities such as gzip and tar.
+
+- Init  
+	This image simplifies running multiple applications within a single container by managing them
+	with systemd.
+
+- Minimal  
+	This image is smaller than the init image and provides nice-to-have features. This image uses the
+	microdnf minimal package manager instead of the full-sized version of DNF.
+
+- Micro  
+	This image is the smallest available UBI, and includes only the minimum packages. For example, this
+	image does not include a package manager.
+
+
+### Inspecting and Managing Container Images
+
+Various tools can inspect and manage container images, including the *'oc image'* command and *'skopeo'*.
+
+
+#### Skopeo
+
+A tool to inspect and manage rempte container images. You can copy and sync container images from different
+container registries and repositories. You are able to copy an image from a remote repository and save
+it to local disk. Even delete it from a remote regisrty if you have the registry permissions. You are
+able to inspect the configuration and content of a container image and list available tags.
+
+Skopeo is executed with the CLI tool 'skopeo' wich can be installed with various package managers. A windows
+version of this utility does not exists, but it does exists as an container image that can be used.
+
+The 'skopeo' utility provides commands for managing and inspecting container images and container image
+registries.
+
+	'skopeo login quay.io'
+	Login to quay.io using skopeo.
+
+After a login if neede into a registry and when working with container images you must specify the *transport*
+method that you can to use.
+
+- 'docker': is used for container registries.
+- 'dir' for local directories.
+
+When working with other CLI tools you normally do not need to specify the transport when executing command
+but skopeo does not define a default transport. The transport method together with the container image name
+is used.
+
+	'skopeo list-tags docker://registry.access.redhat.com/ubi10/httpd-24' -> ...
+	Will list the tags on the specified image.
+	
+	Since we are connecting to a registry the transport 'docker' is used with "://" and the container 
+	image full path.
+
+Skopeo options / commands
+
+- 'skopeo list-tags ...'  
+	Listing tags for a container image.
+
+- 'skopeo inspect ...'  
+	View details about the container image, enviromental variables, tags and so on. Adding the "--config"
+	flag you can also view the configuration, metadata and history.
+	
+		'skopeo inspect docker://registry.access.redhat.com/ubi10/httpd-24' ->
+			{
+				"Name": "registry.access.redhat.com/ubi10/httpd-24",
+				"Digest": "sha256:ea8324928dfa88775daf55a76f1ec0ee643b3df926f78822c722b697fad3cbcf",
+				"RepoTags": [
+				...]
+				...
+			}
+		
+		'skopeo inspect --config docker://registry.access.redhat.com/ubi10/httpd-24' -> ...
+
+- 'skopeo copy ...'  
+	Copy an image from on location or repository to another. 
+	
+		'skopeo copy docker://quay.io/skopeo/stable:latest docker://registry.example.com/skopeo:latest'
+		Copy an container image from quay.io to registry.example.com
+
+- 'skopeo delete ...'  
+	Delete a container image from a repository
+	
+		'skopeo delete docker://registry.example.com/skopeo:latest'
+
+- 'skopeo sync ...'  
+	Synchronize one or more images from one location to another. Use this command to copy all container
+	images from a source to a destination.
+	
+		'skopeo sync --src docker --dest docker registry.access.redhat.com/ubi10/httpd-24 registry.example.com/httpd-24'
+		'skopeo sync [command options] --src transport --dest transport SOURCE DESTINATION format'
+
+Some registries require users to authenticate before accessing container images and metadata.
+
+	'skopeo inspect docker://registry.redhat.io/rhel10/httpd-24' ->
+		"FATA[0000] Error parsing image name "docker://registry.redhat.io/rhel10/httpd-24": unable to
+		retrive auth token ..."
+	
+	When not being able to access you migh have to login to the registry
+
+	'skopeo login registry.redhat.io'
+	And you will need to provide your username and password.
+	
+	The credentials are stored in the "${XDG_RUNTIME_DIR}/containers/auth.json" file, ${XDG_RUNTIME_DIR} 
+	refers to a directory that is specific to the current user. The credentials are encoded in Base64
+	format.
+
+
+#### 'oc image' command
+
+It can be used to inspect, configure or retrive information about the container.
+
+- 'oc image info ...'  
+	Inspects and retrieves information about a container image. Identify the ID or Hash of the image.
+	Also review container image metadata suchh as environmental variables, network ports and commands.
+	
+	If the image is provide for different architectures, AMD64, ARM64, ... you must include the flag
+	"--filter-by-os"
+	
+		'oc image info registry.access.redhat.com/ubi10/httpd-24 --filter-by-os amd64' ->
+			Name:          registry.access.redhat.com/ubi10/httpd-24:10.0
+			Digest:        sha256:b765...
+			...
+
+- 'oc image append ...'  
+	Use this command to add layers to container images, and then push the container image to a registry.
+	
+- 'oc image extract ...'  
+	You can use this command to extract or copy files from a container image to a local disk. Use this
+	command to access the contents of a container image without first running the image as a container. 
+	A runing container engine is not required.
+
+- 'oc image mirror ...'  
+	Copy, or mirror, container images from one container registry or repository to another. For example,
+	you can use this command to mirror container images between public and private registries. You can
+	also use this command to copy a container image from a registry to a disk. The command mirrors the
+	HTTP structure of a container registry to a directory on a disk. The directory on the disk can then
+	be served as a container registry.
+
+
+### Running Containers as Root
+
+Running a contaoiner as root is a security risk, it a hacker exploits the appalication access the container
+and access a vulnerability to excape from the containereized environment and access the host system.
+Attackers might escape the containerized environment by exploiting bugs and vulnerabilities that are
+typically in the kernel or the container runtime.
+
+Traditionally, when an attacker gains access to the container file system by using an exploit, the 
+root user inside the container corresponds to the root user on the host system. If an attacker escapes
+ the container isolation, then they have access to elevated privileges on the host system, which provides
+  a vector of attack that could cause damage.
+
+Containers that do not run as the root user might prove unsuitable for use in your application because
+of the following limitations
+
+- Non-trivial Containerization  
+	Some applications might require the root user. Depending on the application architecture, some 
+	applications might not be suitable for non-privileged containers, or might require additional experience
+	to containerize.
+
+	For example, applications such as HTTPd and Nginx start a bootstrap process and then create a process
+	with a non-privileged user, which interacts with external users. Such applications are non-trivial
+	to containerize for non-privileged use.
+
+	Red Hat provides containerized versions of HTTPd and Nginx that do not require root privileges for
+	production usage. You can peruse these validated containers in the Red Hat container registry
+
+- Required Use of Privileged Utilities  
+	Non-privileged containers cannot bind to privileged ports, such as the 80 or 443 ports. Red Hat 
+	advises against using privileged ports. Instead, use port forwarding to avoid the use of privileged
+	ports within container definitions.
+
+	Similarly, non-privileged containers cannot use the ping utility by default, because it requires
+	elevated privileges to establish raw sockets.
 
 ---
+
+## TROUBLESHOOT CONTAINERS AND PODS 
+
+### Container Troubleshooting Overview
+
+Container are desinged to be immutable and short lived. When chnages are needed or a new container is
+available you can apply them without needed to remove the old ones.
+
+Updating a running container should only be done for troubleshooting. You should not edit a running container
+to fix an error in deployment. A change or edit to the container image should be done after troubleshooting
+and then redeploy the containers with the change or edit.
+
+
+### CLI Troubleshooting Tools
+
+Various tools can be use to interact with, inspect or alter running containers. Commands like 'oc get'
+can be used for specific resource types. Other commands are available for detailed instections of a 
+resource or to update a resource in real time. 
+
+'oc' options to validate the functions and environment for a container instance (running)
+
+- 'oc describe ...': Display the details of a resource.
+- 'oc edit ...': Edit a resource configuration by using the system editor.
+- 'oc patch ...': Update a specific attribute or field for a resource.
+- 'oc cp ...': Copy files and directories to and from containers.
+- 'oc exec ...': Execute a command within a specified container.
+- 'oc port-forward ...': Configure a port forwarder for a specified container.
+- 'oc logs ...': Retrieve the logs for a specified container.
+- 'oc rsync ...': Synchronize files and directories to and from containers.
+- 'oc rsh ...': Start a remote shell within a specified container.
+
+### Editing Resources
+
+Troubleshooting begins with inspection and data gathering. The *describe* option can provide helpful
+details about the resource such as definition and its purpose.
+
+	'oc describe pod dns-default-lt13h' ->
+		Name:               dns-default-lt13h
+		Namespace:          openshift-dns
+		Priority:           2000001000
+		Priority Class Name: system-node-critical
+		...
+		
+	Retrive information about a pod in the "openshift-dns" namespace
+
+Different tools can be used to edit a resouce such as a running container.
+
+The *edit* options opens up the specific resouce in the defualt editor in the terminal. The editor can
+be set by the "KUBE_EDITOR" or the EDITOR environmental variable.
+
+	'oc edit pod mongo-app-sw88b'
+	Opens up the resource in an editor.
+
+Instead of edit the resouce you can apply the change with the *patch* option. If will update the specific
+fields.
+
+	'oc patch pod valid-pod --type='json' \
+	-p='[{"op": "replace", "path": "/spec/containers/0/image", \
+	"value":"http://registry.access.redhat.com/ubi8/httpd-24"}]''
+	
+	The above patch will update the container image that the pod uses.
+
+
+### Copy Files to and from Containers
+
+Administators can copy files and folders to or from a container to inspect, update or correct functionality.
+Adding a configuration file, retrieving an application log are exaples.
+
+OBS!! For *'op cp ...'* to work the binary *'tar'* must be present in the container
+
+	'oc cp apache-app-kc82c:/var/www/html/index.html /tmp/index.bak'
+	Coping the file "/var/www/html/index.html" from the container instance "apache-app-kc82c" and saving
+	it on the local folder at "/tmp/index.bak"
+
+	'oc cp /tmp/index.html apache-app-kc82c:/var/www/html/'
+	The reverse, coping a local file into a running container, into folder "/var/www/html/".
+
+OBS!! If you are doing a copy to a pod with multiple container you need to use "-c" and specify the container
+or by defalut the target will be the first container.
+
+Instead of doing a copy you can do a *rsync* to sync files and folder between the local filesystem and
+a running container.
+
+	'oc rsync apache-app-kc82c:/var/www/ /tmp/web_files'
+	Sync from the container to the local filesystem
+
+OBS!! 'rsync' must be present in the container and local system. If missing from the local system a tar
+file will be created and sent to the container and it will extract the files from the archive. If both
+*tar* and *rsync* missingan error will occur and the *rsync* option fails.
+
+
+### Remote Container Access
+
+Exposing a port for a container is routine, specially for a container that provide a service. In a cluster
+port forward connections are med through the *kubelet* that maps a local post in the system to a port
+on a pod. Configuring a port forward creates a request through the Kubernetes API and creates a multiplexed
+stream such as HTTP/2 with a port header that specifies the target port in the pod. The kubelet delivers
+the stream data to the target pod and port and reverse for egress data from the pod.
+
+Doing a troubleshoot on an application that normally runs without the need to connect locally you can
+use port forward function to expose connectivity to the pod for investigation. This function gives an
+administrator a way to connect on the new port and inspect the applicaion. When done the applicaion is
+redeployed without the port-forward connection.
+
+	'oc port-forward nginx-app-cc78k 8080:80' ->
+		Forwarding from 127.0.0.1:8080 -> 80
+		Forwarding from [::1]:8080 -> 80
+	
+	Port-forwarding a local port listing on 8080 and forward it to port 80 on a pod named "nginx-app-cc78k".
+
+
+### Connect to Running Containers
+
+Administrators use CLI tools to connect to a container via a shell for forensic inspections. With this
+approach, you can connect to, inspect, and run any available commands within the specified container.
+
+	'oc rsh tomcat-app-jw53r' -> Get a shell in the conatiner
+
+Use "-c" to specify a conatiner in a pulti-container pod or connect to the first container.
+
+You can also use the webconsole to connect to a running container. From the Pod details page use the
+tab "Terminal" (select the container if more lives in the pod).
+
+
+### Execute Commands in a Container
+
+Passing commadn to be executed in a running container from the CLI is another way of troubleshoot a 
+running container. Use this way to connect or to send command to the container.
+
+Use "-c" to specify a conatiner in a pulti-container pod or connect to the first container.
+
+	'oc exec -it mariadb-lc78h -- ls /' -> "bin boot dev etc ..."
+	'oc exec mariadb-lc78h -- ls /' -> ...
+	
+	Sending a command to be executed inside the container.
+
+Normally you add the "-it" flag to the *exec* option. These flafs instruct the stdin to the container
+and stdout/stderr back to the terminal. Using them or not may impact the output.
+ 
+
+### Container Events and Logs
+
+Looking at historical actions for a container can offer information about is lifecycle and health of
+the deployment. The cluster logs provides the chronological details of the containers actions. Administrator
+inspects this log for information and issues for the running container.
+
+Use "-c" to specify a conatiner in a pulti-container pod or connect to the first container.
+
+	'oc logs BIND9-app-rw43j' -> ...
+	Getting the logs for the specific container named "BIND9-app-rw43j".
+
+In Kubernetes an event is a report of something that happended in the cluster. 
+
+	'oc get event' ->
+		LAST SEEN   TYPE     REASON           OBJECT                           MESSAGE
+		...
+		21m         Normal   AddedInterface   pod/php-app-5d9b84b588-kzfxd     Add eth0 [10.8.0.93/23] from ovn-kubernetes
+		21m         Normal   Pulled           pod/php-app-5d9b84b588-kzfxd     Container image "registry.ocp4.example.com:8443/redhattraining/php-webapp:v4" already present on machine
+		21m         Normal   Created          pod/php-app-5d9b84b588-kzfxd     Created container php-webapp
+		21m         Normal   Started          pod/php-app-5d9b84b588-kzfxd     Started container php-webapp
+
+	The events for the current namespace.
+
+
+### Available Linux Commands in Containers
+
+Using Linux commands for troubleshooting applications can help. But when connecting to a container only
+the tools and applications within that container are available. You can add tolls to the container environment
+for helping with the troubleshooting.
+
+But
+
+- Additional tools increase the size of the image, which might impact container performance.
+- Tools might require additional update packages and licensing terms, which can impact the ease of updating
+	and distributing the container image.
+- Hackers might exploit tools in the image.
+
+So add the tools with this in mind, redeploy the "faulty" container afterworth to reduce the above concerns.
+Then fix the issue that you found.
+	
+
+### Troubleshooting from Inside the Cluster
+
+Administrator can create and deploy a container within the cluster fot investigation and remediation.
+Creating a container containing cluster troubleshooting tools you have an enviroment to perform these
+tasks from any computer with a cluster access.
+
+Administrator should create a container of this kind that contain the tools needed for troubleshooting
+the cluster and its containerized applications. In this way, you deploy this "toolbox" container to
+supplement the forensic process and to provide an environment with the required commands and tools for
+troubleshooting problematic containers. For example, the toolbox container can test how resources operate
+inside a cluster, such as to confirm whether a pod can connect to resources outside the cluster. Regular
+cluster users can also create a toolbox container to help with application troubleshooting. For example,
+a regular user could run a pod with a MySQL client to connect to another pod that runs a MySQL server.
+
+
+--- 
 
 OLD!!!
 
