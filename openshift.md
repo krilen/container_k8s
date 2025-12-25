@@ -1,5 +1,7 @@
 # OPENSHIFT
 
+Part 1/2
+
 Red Hat OpenShift Container Platform (RHOCP) 
 
 OpenShift is a complete platform to run application in clusters of servers. It is based om existing
@@ -2455,26 +2457,4 @@ troubleshooting problematic containers. For example, the toolbox container can t
 inside a cluster, such as to confirm whether a pod can connect to resources outside the cluster. Regular
 cluster users can also create a toolbox container to help with application troubleshooting. For example,
 a regular user could run a pod with a MySQL client to connect to another pod that runs a MySQL server.
-
-
---- 
-
-OLD!!!
-
-## LIFECYCLE
-
-Lifecycle of applications in Red Hat OpenShift Container Platform.  
-The following figure illustrates the basic lifecycle of an application that is deployed in a RHOCP cluster.
-
-![From REDHAT Academy](openshift/pod_lifecycle.svg)
-
-1. Starts with the definition of a pod and the containers that it is composed of, which contain the application.
-1. Pods are assigned to a healthy node.
-1. Pods run until their containers exit.
-1. Pods and their containers are removed from the node.  
-	Depending on policy and exit code, RHOCP might remove pods after exiting, or might retain them to 
-	enable access to the pod container logs.
-
-
-
 
