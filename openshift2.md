@@ -734,7 +734,8 @@ The following diagram illustrates how all pods connect to a shared network:
 
 ![From REDHAT Academy](openshift/network-sdn-pod-network.svg)
 
-Among the features of OVN-Kubernetes, open standards enable vendors to propose solutions for centralized management, dynamic routing, and tenant isolation.
+Among the features of OVN-Kubernetes, open standards enable vendors to propose solutions for centralized
+management, dynamic routing, and tenant isolation.
 
 
 ### Kubernetes Networking
@@ -804,8 +805,433 @@ for the application.
 
 ![From REDHAT Academy](openshift/multicontainer-fail-with-service.svg)
 
-!!!!! Are at 4.3 under Figure 4.9
+In the above picture the "before" shows that a front-end reference a spable IP of the back-end service,
+instead of the IP of the back-end container. When the back-end container fails a new back-end container
+will be created by Kubernetes to replace the failed pod. In response to the change Kubernetes removes 
+the failed pod from the service endpoints. Kubernetes then adds the Ip of the new back-end pod to the
+service endpoints.
 
+With the service requests from the fron-end container to the back-end container keeps working. The service
+dynamically updates with the IP chnage. A service provides a permanent statis IP address for a group of
+pods that belong to the same deployment or replica set for an applicaion. Until it is deleted the assigned
+IP will not chnage and the cluster does not reuse it.
+
+Most application do not run as a single pod. Applications needs to scale horizontally. Multiple pods
+run the same container to meet growing user demand. A deployment resource manages multiple pods that
+runs the same container. A service provide a single IP address for the entire set. The service performs
+load balancing for client requests among member pods.
+
+With services, containers in a pod can establish network connections to containers in other pod. The pods
+that the service tracks do not need to exists on the same compute node or in the same namespace or project.
+Because a service provides a stable IP address for other pods to use a pod does not need to discover
+the new IP address for another pod after a restart. The service provides a stable IP address to use no
+matter which compute node runs the pod after restart.
+
+![From REDHAT Academy](openshift/network-sdn-service-network.svg)
+
+The service object provides a stable IP address for the client container on "Node X" The stable IP address
+enables the client to send request to any of the API containers.
+
+Kubernets uses labels on pods to select those pods that are associated with a service. To include a pod
+in a service the pod labels must include each of the selector fields of the service.
+
+![From REDHAT Academy](openshift/network-sdn-service-selector.svg)
+
+In the above example the selector has a key-value pair "app: myapp". The pods with a matching label of
+"app: myapp" are included in the set that are associated with the service. The selector attribute of
+a service identifies the set of pods that from the endpoints for the service. Each pod in the set is an
+endpoint for the service.
+
+To create a service for a deployment use the 'expose' option.
+
+	'oc expose deployment/<deployment-name> [--selector <selector>]
+	[--port <port>][--target-port <target port>][--protocol <protocol>][--name <name>]'
+	
+The 'oc expose' uses the "--selector" flag to specify label selecors. When it is omitted a selector that
+matches the replication controller or replica set is used. 
+
+The "--port" flag specifies the port that the service listens on. This port is availbe only to pods	within
+the cluster. If a port is not provided the the port is copied from the configuration of the deployment.
+
+The "--target-port" flag specifies the name or number of the container port that the service uses to
+communicate with the pods. If a port value is not provided the the port is copied from the configuration
+of the deployment.
+
+The "--protocol" flag determin the network protocol for the serveice, TCP is used by default.
+
+The "--name" flag names the service, if no name is provided then the service usesthe same name as the
+deployment.
+
+	'oc get service db-pod -o wide' ->
+		NAME    TYPE        CLUSTER-IP      EXTERNAL-IP PORT(S)     AGE     SELECTOR
+		db-pod  ClusterIP   172.30.108.92   <none>      3306/TCP    108s    app=db-pod
+	
+	To view the selector for a servie you must use the wide output.
+	
+	'oc get endpoints' -> 
+		NAME     ENDPOINTS                       AGE
+		db-pod   10.8.0.86:3306,10.8.0.88:3306   27s
+	
+	See the endpoints that a service uses.	
+	The name of the service is "db-pod" and pods must use "app=db-pod" label (see above) to be included
+	in the host list for the "db-pod" service
+	
+	'oc describe deployment db-pod' ->
+		Name:                   db-pod
+		Namespace:              deploy-services
+		CreationTimestamp:      Wed, 18 Jan 2023 17:46:03 -0500
+		Labels:                 app=db-pod
+		Annotations:            deployment.kubernetes.io/revision: 2
+		Selector:               app=db-pod
+		...
+	
+	To see the deployment selector use 'oc describe deployment ...'
+	
+	'oc get deployment/db-pod -o yaml'
+		...
+		  selector:
+		    matchLabels:
+		      app: db-pod
+		...
+	
+	To get the output in Yaml format and the deployment resource from the spec.selector.matchLabels object.
+
+
+### Kubernetes DNS for Service Discovery
+
+Kubernetes uses an Internal Domain Name System (DNS) server that the DNS operator deploys. The DNS operator
+creates a default cluster DNS name and assigns DNS names to services that are defined. The DNS operator
+implements the DNS API from the operator.openshift.io API group. The operator deploys CoreDNS, creates
+the service for CoreDNS and configures the kubelet component to instruct pods pods to use the CoreDNS
+service IP address for name resolution. When a service does not have a cluster IP the DNS operator assigns
+a DNS record that resolves to the set of IP addresses of the pods behind the service.
+
+The DNS server discovers a service from a pod by using the internal DNS server that are only visable
+for pods. Each service is dynamically assigned a Fully Qualified Domain Name (FQDN) that uses the format:
+"SVC-NAME.PROJECT-NAME.svc.CLUSTER-DOMAIN"
+
+	'cat /etc/resolv.conf' ->
+		nameserver 172.30.0.10
+		search deploy-services.svc.cluster.local svc.cluster.local cluster.local
+		options ndots:5
+
+	When a pod is created Kubernetes provides the resolv.conf file.
+	"deploy-services" is the project name for the pod
+	"cluster.local" is the cluster domain
+
+The nameserver directive provides the IP address of the Kubernerts internal DNS server. The "options ndots"
+specifies the number of dots that must be in a name to qualify for an initial absolute query. Alternative
+hostname values are derived by appending values from the search directive to the name that you send 
+to the DNS server.
+
+In the "search" directive the "svc.cluster.local" enables any pod to communicate with another pod using
+the service name and project name, "SVC-NAME.PROJECT-NAME".
+
+The first entry in the "search" directive enables a pod to use the service name to specify another pod
+in the same project. In OpenShift a project is also a namespace for a pod. The service name alone is
+enough for pods in the same project, "SVC-NAME"
+
+
+### Kubernetes Networking Drivers
+
+Container Network Interface (CNI) plugins gives a common interface between the network provider and 
+the container runtime. CNI defines the specifications for plugins that configure network interfaces
+inside containers. Plugins are written to the specification enable different network providers to control
+the OpenShoft cluster network.
+
+Red Hat provides the following CNI plug-ins for a RHOCP cluster
+
+- OVN-Kubernetes: The default plug-in for first-time installations of RHOCP 4.10 and later versions.
+- OpenShift SDN: An earlier plug-in from RHOCP 3.x; it is incompatible with some later features of RHOCP 4.x.
+
+Certified CNI plugins from other vendors are also complatiable with OpenShift cluster.
+
+The SDN uses CNI plugin to create Linux namespaces to partition the usage of resources and processes 
+on virtual and physical hosts. With the implementation containers inside pods can share resources such
+as devices, IP stacks, firewall rules and routing table. The SDN provide a unique routable IP to each
+pod so the pod is accessable from any oter service in the same network.
+
+In OpenShift 4.18, OVN-Kubernetes serves as the default network provider and OpenShift SDN is deprecated.
+
+OVN-Kubernetes uses OVN to manage the cluster network. A cluster that uses the OVN-Kubernetes plugins
+also runs Open vSwitch (OVS) on each node. OVN configures OVS on each node to implement the declared
+network configuration.
+
+
+#### The OpenShift Cluster Network Operator
+
+OpenShift provide a Cluster Network Operator (CNO) that configures OpenShift cluster networking. The CNO
+serves as an OpenShift cluster operator that loads and configures CNI plugins.
+
+	'oc get -n openshift-network-operator deployment/network-operator' ->
+		NAME              READY   UP-TO-DATE  AVAILABLE   AGE
+		network-operator  1/1     1           1           41d
+		
+	As a cluster admin you can observe the status of the CNO
+
+An administrator configures the CNO at installation time
+
+	'oc describe network.config/cluster' ->
+		Name: cluster
+		...
+		Spec:
+		  Cluster Network:
+		  Cidr: 10.128.0.0/14 #1
+		  Host Prefix: 23
+		  External IP:
+		    Policy:
+		      Network Type: OVNKubernetes
+		      Service Network:
+		        172.30.0.0/16 #2
+	
+	Explain the output from the abobe command
+	-----
+	#1: The Cluster Network CIDR defines the range of IP addresses for all pods in the cluster.
+	#2: The Service Network CIDR defines the range of IP addresses for all services in the cluster.
+	
+	Use the above command to view the configuration.
+
+---
+
+## SCALE AND EXPOSE APPLICATIONS TO EXTERNAL ACCESS
+
+### IP Addresses for Pods and Services
+
+Application might need multiple pods to scale horixintally to meet growing demands. OpenShift deploys
+many pods with the same conytainer from a single pod resource definition. A service resource defines a
+single IP and port combination. The resource assign a single IP to the stable IP ta a pool of pods.
+The resource balances client request to all pods.
+
+OpenShift assigns each service an unique IP for client to connect to. Round-Robin is used for load balancing.
+The service IP comes from internal OVN-Kubernetes network which is seperate from the podntwork and only
+accessible to pods within the cluster. OpenShift adds each pod to match the selecor of the service as an endpoint.
+
+### Service types
+
+OpenShift offers several different service types to mmet the needs of an applicaion, cluster infrastructure
+and security requirements.
+
+- ClusterIP  
+	The ClusterIP type which is the default type. Assigns a cluster internal IP to a service. The assignment
+	makes the service accessible only within the cluster.
+	
+	ClusterIP service ebales pod to pod communication. OpenShift gets Ips from a dedicated service network.
+	The network accessable only inside of the network supports internal communication. Kubernetes automates
+	management of the service.
+	
+- LoadBalancer  
+	The LoadBalancer type OpenShift to provision a load balancer of the cloud provider. An external accessible
+	IP is assigned to provide access to the applicaion.
+	
+	When deploying a LoadBalancer services a cost will occur when assigning the service to every applicaion.
+	The service are exposing applicaions to external networks. Additional security configuration is required
+	to prevent unauthorized access.
+	
+- ExternalIP  
+	The ExternalIp service redirect traffic from the virtual IP address on a cluster node to a pod. A 
+	cluster administrator assigns the virtual IP address to the node and confifures failover to another
+	node if needed.
+	
+	OpenShift configure NAT rules to route traffic from the virtual address to the pod. Administrators
+	must make sure that the external IP is routed to the node. Additional security measures protect 
+	the cluster from external access.
+	
+	WARNING!!!  
+	Starting with RHOCP 4.18, ExternalIP is a legacy feature due to security concerns. Direct network
+	connections to cluster nodes, which this service requires, conflict with most security policies.
+	Use the LoadBalancer or the NodePort type unless the ExternalIP type meets specific requirements.
+	
+- NodePort  
+	Exposes service exposes a service on a specific port, default range 30000-32767 on the IP of each
+	cluster node. Each node redirect traffic from this port to the endpoints of the service.
+	
+	WARNING!!!  
+	NodePort services require direct network connections to cluster nodes, which poses a security risk.
+	Implement strict firewall rules and access controls to mitigate risks.
+	
+- ExternalName  
+	The ExternalName service map a Kubernetes service to an external DNS name that is soecified in the
+	"externalName" field. The Kubernetes DNS server return the EexternalName" in a CNAME record. The
+	record directs clients to resolve the external name to an IP address.
+
+### Using Routes for External Connectivity
+
+OpenShift provides *Route* resources to expose applications to external networks. A route resource supports
+HTTP, HTTPS, TCP an oter protcols. It prioritize HTTP and TLS based applicaions for external exposure.
+None HTTP applicaions such as databases typically remains internal. *Route* and *Ingress* resources handle
+ingress traffic i OpenShift.
+
+A *Route* resource assigns a public accessible hostnmae to an application. The OpenShoft ingress controller, 
+HAProxy based, redirect traffic from a public IP address to pods. The OpenShift ingress controller is 
+the default but support for third-party ingress controllers that are deployed in parallel. *Route* resources
+offer advanced features that is better then Kubernetes I*Ingress* capabilities. Features include TLS 
+re-encryption, passthrough and split traffic for blue-gree deployments.
+
+	'oc expose service api-frontend --hostname api.apps.acme.com'
+	Create a route using the oc CLI
+	
+	The "--target-port" flag with the 'oc expose' command specifies the name or number of the port container
+	that is uses to communicate with the pods. If no port value is provided then the port is copied
+	from the deployment
+
+	Not using "--hostname" flag makes OpenShift to generate a hostname in
+	"<route-name>-<project-name>.<default-domain>" format, a "frontend" route in an "api" project with a 
+	wildcard domains of "apps.example.com" becomes " frontend-api.apps.example.com".
+
+IMPORTANT!!!  
+The DNS server for the wildcard domain resolves all names to configured IPs. The server does not recognize
+specific route hostnames. The OpenShift ingress controller treats route hostnames as HTTP virtual hosts.
+Invalid or non-existent route hostnames trigger an HTTP 503 error.
+
+To create a route configure the following steps
+
+1. Service Name: Specifies the service to determine target pods.
+1. Hostname: Sets the route hostname as a subdomain of the cluster wildcard domain, which RHOCP can autogenerate.
+1. Path: Defines an optional path for path-based routing.
+1. Target Port: Matches the targetPort in the service, and specifies the listening port of the application.
+1. Encryption Strategy: Chooses secure (TLS) or insecure routing.
+
+	An examplr of a minimal route definition
+	-----
+	kind: Route
+	apiVersion: route.openshift.io/v1
+	metadata:
+	  name: a-simple-route #1
+	  labels: #2
+		app: API
+		name: api-frontend
+	spec:
+	  host: api.apps.acme.com #3
+	  to:
+		kind: Service
+		name: api-frontend #4
+	  port:
+		targetPort: 8443 #5
+		
+	Explaination to the route definition
+	-----
+	#1: Specifies a unique route name.
+	#2: Defines selectors for the route.
+	#3: Sets the hostname, which is a subdomain of the cluster wildcard domain.
+	#4: Identifies the service to redirect traffic to, by determining target pods.
+	#5: Maps the router port to the endpoint port of the service.
+
+NOTE!!!
+Some ecosystem components integrate with Ingress resources but not with Route resources. Starting with
+RHOCP 4.18, creating an Ingress object automatically generates a managed Route object, which is deleted
+when the Ingress object is removed.
+
+	'oc delete route a-simple-route'
+	To delete route
+
+It is also possible to create a route using OpenShift web console. "Networking -> Routes", click "Create Route"
+customize the name, hostname, path and target service.
+
+
+### Using Ingress Objects for External Connectivity
+
+A Kubernetes *Ingress* reource provides a simular function as the OpenShift route resouce. It supports
+HTTP, HTTPS, Server Name Indication (SNI) and TLS with SNI. The OpenShift ingress controller processes
+Ingress objects and enables features such as TLS temination, path redirect and sticky sessions.
+
+NOTE!!!  
+Note
+Although Ingress resources are standard in Kubernetes, Route resources are preferred for advanced features
+and native integration with the OpenShift ingress controller.
+
+	'oc create ingress ingr-sakila --rule="ingr-sakila.apps.ocp4.example.com/*=sakila-service:8080"'
+	Create an Ingress object
+	
+	Example of a minimal Ingress definition
+	-----
+	apiVersion: networking.k8s.io/v1
+	kind: Ingress
+	metadata:
+	  name: frontend #1
+	spec:
+	  rules:
+	  - host: www.example.com #2
+		http:
+		  paths:
+		  - path: /
+		    pathType: Prefix
+		    backend:
+		      service:
+		        name: frontend #3
+		        port:
+		          number: 80 #4
+	  tls:
+	  - hosts:
+		- www.example.com
+		secretName: example-com-tls-certificate #5
+	
+	Explanation of the minimal Ingress definition
+	-----
+	#1: Specifies a unique name for the Ingress object.
+	#2: Sets the hostname for inbound traffic.
+	#3: Identifies the service to redirect traffic to.
+	#4: Defines the port for the service back end.
+	#5: Configures TLS for secure paths, which requires a matching host and a certificate secret.
+	
+	'oc delete ingress frontend'
+	Delete an Ingress object
+
+
+### Sticky Sessions
+
+A sticky session ensures that a stateless applicaions traffic reaches the same pod for a session. The
+OpenShift ingress controller can use cokkies to manage session persistence for Route and Ingress resources.
+The controller selects a pod for the session, the controller generates the cookie, the controller includes
+the cookie in the response, tehe clients sends the cookie with subsequent requests which enables the
+controller to route traffic to the same pod.
+
+	'oc annotate ingress ingr-example ingress.kubernetes.io/affinity=cookie'
+	To configure session persistence for an Ingress object by using a cookie
+	
+	'oc annotate route route-example router.openshift.io/cookie_name=myapp'
+	To configure session persistence for a Route object with a custom cookie named myapp
+	
+	'ROUTE_NAME=$(oc get route route-example -o jsonpath='{.spec.host}')'
+	To capture the route hostname
+	
+	'curl $ROUTE_NAME -k -c /tmp/cookie_jar'
+	To access the route and save the cookie
+	
+	'curl $ROUTE_NAME -k -b /tmp/cookie_jar'
+	To use the saved cookie for subsequent requests, use the following command:
+
+Using the saved cookie ensures that requests reach the same pod.
+
+NOTE!!!  
+Cookies cannot be set on passthrough routes because the HTTP traffic is encrypted, and the router does
+not terminate TLS or read the contents of the request.
+
+
+### Load Balance and Scale Applications
+
+Administrators and developers can scale the number of replicas in development to handle traffic surges
+or to conserve resources.
+
+	'oc scale --replicas=5 deployment/scale'
+	To scale a deployment, increaste of decrease the number of pods to 5
+
+The deployment updates the replica set. The replica set creates or deletes pods to match the intended
+replica count.
+
+Avoid modifying a replica set directly, because the deployment controller manages these changes.
+
+
+#### Load Balance Pods
+
+A kubernetes Service resource functions as a internal load balancer by providing access to a workload
+via the service name. The service distributes incomming connections across all replicated pods. The OpenShift
+ controller uses the selector of the service to identify the service and endpoints. When both the controller
+ and a service provide load balancing OpenShift relies on the controller to direct traffic to pods.
+ The controller detects chnages in IPs of the service, the controller update the configuration. Custom
+ controllers can propagate API object chnages to external solutions.
+
+The OpenShift ingress controller maps external hostnames. The controller balances service endpoints
+over protocols that include distinguishing information, such as HTTP host headers.
 
 ---
 
