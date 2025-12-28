@@ -1235,6 +1235,434 @@ over protocols that include distinguishing information, such as HTTP host header
 
 ---
 
+## EXTERNALIZE THE CONFIGURATION OF APPLICATIONS
+
+### Configuring Kubernetes Applications
+
+Running an application in Kubernetes from an image it uses the applications default configuration. This
+configuration might not be valid for production and might be needed to be customized before production.
+
+With Kubernets you can use JSON or Yamal formats to specify the manifest for each applicaion, the name,
+labels, image source, storage, environmental variables, ...
+
+	Example of a Yaml manifest for a deployment
+	-----
+	apiVersion: apps/v1 #1
+	kind: Deployment #2
+	metadata: #3
+	  name: hello-deployment
+	spec: #4
+	  replicas: 1
+	  selector:
+		matchLabels:
+		  app: hello-deployment
+	  template:
+		metadata:
+		  labels:
+		    app: hello-deployment
+		spec: #5
+		  containers:
+		  - env: #6
+		    - name: ENV_VARIABLE_1
+		      valueFrom:
+		        secretKeyRef:
+		          key: hello
+		          name: world
+		    image: quay.io/hello-image:latest
+
+	Explanation for the deployment manifest
+	-----
+	#1: API version of the resource.
+	#2: Deployment resource type.
+	#3: In this section, you specify the metadata of your application, such as the name.
+	#4: You can define the general configuration of the resource that is applied to the deployment,
+		such as the number of replicas (pods), the selector label, and the template data.
+	#5: In this section, you specify the configuration for your application, such as the image name,
+		the container name, ports, environment variables, and more.
+	#6: You can define the environment variables to configure your application needs.
+
+In some cases an applicaion may need combination of things to work in production. A database might 
+have to be present for the application to be able to run. A combination of environmental values, external
+files or command line arguments might be needed to the applicaion to run proper in production. These
+different ways are to ensure that the applicaion is portable and able to run.
+
+Kuberneters provides help with the configuration of the application by using configuration maps and
+secrets.
+
+Configuration maps can be injected into containers with configuration data. The *ConfigMap* (configuration
+map) namespaced object gives a way to inject data into running container instances. The ConfigMap do
+not require protection.
+
+	Example of a Configuration map manifest
+	-----
+	apiVersion: v1
+	kind: ConfigMap #1
+	metadata:
+	  name: example-configmap
+	  namespace: my-app
+	data: #2
+	  example.property.1: hello
+	  example.property.2: world
+	  example.property.file: |-
+		property.1=value-1
+		property.2=value-2
+		property.3=value-3
+	binaryData: #3
+	  bar: R0lGODlhAgACAIABAO4AAP///yH5BAEHAAEALAAAAAACAAIAAAIDRAIFADs=
+
+	Explaination of the configuration map
+	-----
+	#1: ConfigMap resource type.
+	#2: Contains the configuration data.
+	#3: Points to an encoded file in base64 that contains non-UTF-8 data, for example, a binary Java
+		keystore file. Place a key followed by the encoded file.
+
+Application that require information of a sensitive nature like use *secrets* in Kubernetes and OpenShift.
+
+Types of data that warrent using *secrets*, passwords, sensitive configuration files, credentials to
+external resources like SSH keys or OAuth token, ...
+
+	Example of a secret manifest
+	-----
+	apiVersion: v1
+	kind: Secret
+	metadata:
+	  name: example-secret
+	  namespace: my-app
+	type: Opaque #1
+	data: #2
+	  username: bXl1c2VyCg==
+	  password: bXlQQDU1Cg==
+	stringData: #3
+	  hostname: myapp.mydomain.com
+	  secret.properties: |
+		property1=valueA
+		property2=valueB
+		
+	Explaination of the secret
+	-----
+	#1: Specifies the type of secret.
+	#2: Specifies the encoded string and data.
+	#3: Specifies the decoded string and data.
+
+A secret is a namespaced object and it can store any type of data.The data is Base64 encoded and not
+stored in plain text. The secret is not encrypted only encoden so it can be decoded from Base64 inside
+the running container instance.
+
+	Encode
+	'SECRET=$(echo secretpassword | base64)'
+	
+	'echo ${SECRET}' -> c2VjcmV0cGFzc3dvcmQK
+	
+	Decode
+	echo ${SECRET} | base64 --decode -> secretpassword
+
+In Kubernetes and OpenShift the following types of secrets are supported
+
+- Opaque secrets: An opaque secret store key and value pairs that contain arbitrary values, and are 
+	not validated to conform to any convention for key names or values.
+
+- Service account tokens: Store a token credential for applications that authenticate to the Kubernetes
+	 API.
+
+- Basic authentication secrets: Store the needed credentials for basic authentication. The data parameter
+	 of the secret object must contain the user and the password keys that are encoded in the Base64
+	 format.
+
+- SSH keys: Store data that is used for SSH authentication.
+
+- TLS certificates: Store a certificate and a key that are used for TLS.
+
+- Docker configuration secrets: Store the credentials for accessing a container image registry.
+
+When storing data in a specific secret resource type, Kubernetes will validate so the data conform to
+the secret type.
+
+NOTE!!!
+By default, configuration maps and secrets are not encrypted. To encrypt your secret data at rest, you
+must encrypt the Etcd database. When enabled, Etcd encrypts the following resources: secrets, 
+configuration maps, routes, OAuth access tokens, and OAuth authorization tokens.
+
+
+### Creating Secrets
+
+A secret needs to be created before the deployment of a pod. Both the 'oc' and 'kubectl' CLI tools provide
+the *'create secret' command.
+
+Ways of creating a secret
+
+- Creating a generic secret that contains a key-value pair typed from the CLI
+
+		'oc create secret generic secret_name --from-literal key1=secret1 --from-literal key2=secret2'
+
+- Creating a generic secret by using key names from the CLI but the values from files
+
+		'kubectl create secret generic ssh-keys --from-file id_rsa=/path-to/id_rsa --from-file id_rsa.pub=/path-to/id_rsa.pub'
+
+- Create a TLS secret that specifies a certificate and associated key
+
+		'oc create secret tls secret-tls --cert /path-to-certificate --key /path-to-key'
+
+To create an opaque secret from the OpenShift web console use "Workloads -> Secret" and click "Create"
+and select "Key/value secret". Fill out the form and specify the value.
+
+To create a secret in the web console to store credentials for a container image registry, click "Workloads -> Secrets" 
+then "Create" and select "image pull secret", complete the form.
+
+
+### Creating Configuration Maps
+
+The syntax for creating a configuration maps and a secret are a close match. You can enter a key-value
+pair or use the content of a file as the value for a key.
+
+	'kubectl create configmap my-config --from-literal key1=config1 --from-literal key2=config2'
+	Creating a configuration map named "my-config"
+	
+	'oc create cm my-config --from-literal key1=config1 --from-literal key2=config2'
+	Using the shorthand 'cm' to create the configMap resource.
+
+To create a configuration map from the web console use "Workloads -> ConfigMats", click "Create ConfigMaps"
+and complete the configuration map by using the form or Yaml view.
+
+NOTE!!!  
+Use a binary data key instead of a data key if the file uses the binary format, such as a PNG file.
+
+
+### Using Configuration Maps and Secrets to Initialize Environment Variables
+
+A configMap can be used for indivitual environmental varaibles that configure the application.
+
+	Example initialization of a ConfigMap of environmental variables
+	-----
+	apiVersion: v1
+	kind: ConfigMap
+	metadata:
+	  name: config-map-example
+	  namespace: example-app #1
+	data:
+	  database.name: sakila #2
+	  database.user: redhat #3
+	
+	Explaination to the initialization
+	-----
+	#1: The project where the configuration map resides. ConfigMap objects can be referenced only by
+		pods in the same project.
+	#2: Initializes the database.name variable to the sakila value.
+	#3: Initializes the database.user variable to the redhat value.
+
+	After the initialization of the ConfigMap you can use it for environmental varaibles for the application.
+	
+	Example of a pod resource that uses the configMap for specific environmental variables
+	-----
+	apiVersion: v1
+	kind: Pod
+	metadata:
+	  name: config-map-example-pod
+	  namespace: example-app #0
+	spec:
+	  containers:
+		- name: example-container
+		  image: registry.example.com/mysql-80:1-237
+		  command: [ "/bin/sh", "-c", "env" ]
+		  env: #1
+		    - name: MYSQL_DATABASE #2
+		      valueFrom:
+		        configMapKeyRef:
+		          name: config-map-example #3
+		          key: database.name #4
+		    - name: MYSQL_USER
+		      valueFrom:
+		        configMapKeyRef:
+		          name: config-map-example #5
+		          key: database.user #6
+		          optional: true #7
+	
+	Explaination to the usage of the ConfigMap
+	-----
+	#0: The same namespace as the ConfigMap was initilized for.
+	#1: The attribute to specify environment variables for the pod.
+	#2: The name of a pod environment variable where you are populating a key's value.
+	#3, #5: Name of the ConfigMap object to pull the environment variables from.
+	#4, #6: The environment variable to pull from the ConfigMap object.
+	#7: Sets the environment variable as optional. The pod is started even if the specified ConfigMap
+		object and keys do not exist.
+
+Instead of specifing the environmetal variabel you can inject the whole ConfogMap to be used as environmental
+variables.
+
+	Example of a pod resource that uses the configMap for environmental variables
+	-----
+	apiVersion: v1
+	kind: Pod
+	metadata:
+	  name: config-map-example-pod2
+	  namespace: example-app
+	spec:
+	  containers:
+		- name: example-container
+		  image: registry.example.com/mysql-80:1-237
+		  command: [ "/bin/sh", "-c", "env" ]
+	  envFrom: #1
+		- configMapRef:
+		    name: config-map-example #2
+	  restartPolicy: Never
+	
+	Explaination to the usage of the ConfigMap
+	-----
+	#1: The attribute to pull all environment variables from a ConfigMap object.
+	#2: The name of the ConfigMap object to pull environment variables from.
+
+Secrets can be used with other Kubernetes resources such as pods, deployments, builds, ... Secret keys
+or volumes with a mount path to the stored secret.
+
+	Example of a stored secret used as a environmental variable
+	-----
+	apiVersion: v1
+	kind: Pod
+	metadata:
+	  name: secret-example-pod
+	spec:
+	  containers:
+		- name: secret-test-container
+		  image: busybox
+		  command: [ "/bin/sh", "-c", "export" ]
+		  env: #1
+		    - name: TEST_SECRET_USERNAME_ENV_VAR
+		      valueFrom: #2
+		        secretKeyRef: #3
+		          name: test-secret #4
+		          key: username #5
+	
+	Explanation of the usage of a secret as environmental variable
+	-----
+	#1: Specifies the environment variables for the pod.
+	#2: Indicates the source of the environment variables.
+	#3: The secretKeyRef source object of the environment variables.
+	#4: Name of the secret, which must exist.
+	#5: The key that is extracted from the secret is the username for authentication.
+
+
+Secrests are alwasy encoded, not encrypted, compaired with ConfigMaps. But their access is restricted
+to fewer users.
+
+
+### Using Secrets and Configuration Maps as Volumes
+
+To expose a secret to a pod, the secret must be created in the same namespace (or project) as the pod.
+Each value of a ley is assigned to a key, after creation it becomes key-value pair.
+
+	'oc create secret generic demo-secret --from-literal user=demo-user --from-literal root_password=zT1KTgk'
+	Creates a generic secret that contains key-value pairs from values typed in the CLI.
+	
+	'oc create secret generic demo-secret --from-file user=/tmp/demo/user --from-file root_password=/tmp/demo/root_password'
+	Create a generic secret where the key and value is from the content of files.
+
+	Example of a secret being mounted to a directory within a pod.
+	-----
+	'oc set volume deployment/demo \ #1
+	--add --type secret \ #2
+	--secret-name demo-secret \ #3
+	--mount-path /app-secrets' #4
+	
+	Explanaintion to a secret being mounted
+	-----
+	#1: Modify the volume configuration in the demo deployment.
+	#2: Add a new volume from a secret.
+	#3: Use the demo-secret secret.
+	#4: Make the secret data available in the /app-secrets directory in the pod. The content of the 
+		"/app-secrets/user" file is demo-user. The content of the "/app-secrets/root_password" file
+		is zT1KTgk.
+
+To assign a secret as a volume to a deployment from the web console See the current secrets at 
+"Workloads -> Secrets". Add a new secret by clicking "Add Secret to workload", choose the "Volume" option
+and deine the path of the secret.
+
+Like secret a configMap must exists before a pod can use it, also in the same namespace, or project,
+as the pod.
+
+	'oc create configmap demo-map --from-file=config-files/httpd.conf'
+	Creating a ConfigMap from an external configuration file
+	
+	'oc set volume deployment/demo --add --type configmap --configmap-name demo-map --mount-path /app-secrets'
+	Add a ConfigMap as a volume
+	
+	'oc set volume deployment/demo' ->
+		demo
+		  configMap/demo-map as volume-du9in
+		    mounted at /app-secrets
+	
+	Confirm that the volume is attached to the deployment
+
+The command "oc set" can also be used to set environmental variables from secrets or configMaps. Names
+of the keys can be modify to match the names of the environmmental values by using the "--prefix" flag.
+
+	'oc set env deployment/demo --from secret/demo-secret --prefix MYSQL_'
+	Modifying the names of a secret to fit an environmetal variable
+	
+	The key "user" from the "demo-secret" secret sets the "MYSQL_USER" environmental variable and the
+	"root_password" from the same secret "demo-secret" set the "MYSQL_ROOT_PASSWORD" environmental variable.
+	
+	If the key name is lowercase then the it will be converted to uppercase (the default for environmental
+	variables) and with the flag "--prefix" "MYSQL_" is added to both the keys "user" and "root_password"
+	
+	The modification summerized:
+	demo_secret:user -> USER -> MYSQL_USER
+	demo_secret:root_password -> ROOT_PASSWORD -> MYSQL_ROOT_PASSWORD
+
+
+### Updating Secrets and Configuration Maps
+
+Secrets and OpenShift sometimes need to change for some reason.
+
+OpenShift provides the 'oc extract' that aloows to to get the current information stored in a secret
+or configMap. Using it allows you to save the data to a specific existing directory by using the "--to"
+flag". Each key in a secret or configMap creates a file with the same name as the key. The content of
+the file is the value. The "--confirm" flag will create the target directory is it does not exists.
+The "--confirm" flag can also be used to overwrite an existing file.
+
+	'oc extract secret/demo-secrets -n demo --to /tmp/demo --confirm'
+	'ls /tmp/demo" -> "user root_password"
+	'cat /tmp/demo/user" -> "demo-user"
+	'cat /tmp/demo/root_password' -> "zT1KTgk"
+
+After the data have been extracted you can now update the content of the files with new data and use
+the files to create the new configMap or secret.
+
+	'echo k8qhcw3m0 > /tmp/demo/root_password'
+	Update the password in the file
+	
+	'oc set data secret/demo-secrets -n demo --from-file /tmp/demo/root_password'
+	Using "oc set data" to update the secret (or configMap). Each key requires an update and you need
+	to specify the name of the key and the vlaue (file).
+
+After an update of configMap or secrets has been done the pods that uses these keys needs to be restarted.
+Pods that uses a volume mount to refrence the secrets or configMaps gets the update without the restart.
+By default "kublet" watches for changes to keys and values that are in volumes for pods on the node.
+"Kubelet" detects the changes and propagates the changes to the pods to keep volume data consistent.
+But a restart might still be needed because if the application reads the configMaps and secret only
+during the startup of application.
+
+
+### Deleting Secrets and Configuration Maps
+
+Like to other Kubernets resources the *delete* option can delete both configMaps and secrets that are
+not longer needed.
+
+	'kubectl delete secret/demo-secrets -n demo'
+	Delete a secret named "demo" using 'kubectl'
+	
+	'oc delete configmap/demo-map -n demo'
+	Delete a configMap named "demo-map" using 'oc'
+
+---
+
+## PROVISION PRESISTENT DATA VOLUMES
+
+### Kubernetes Persistent Storage
+
+
+
+---
 OLD!!!
 
 ## LIFECYCLE
