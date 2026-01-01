@@ -1660,6 +1660,400 @@ not longer needed.
 
 ### Kubernetes Persistent Storage
 
+Containers haev shortlived storage by default, it lifetimes does notextand beyond the pod. The default
+storage can not be shared across pods. When the pod is the deleted the containers and all od its data
+is also deleted. To preserve data containers need persistent storgae volumes.
+
+OpenShift uses Kubernetes persistent volume (PV) framework, cluster administrators can provision persistant
+storage for a cluster. Developersn san use persistent volume claims (PVCs) to request a PV without knowledge
+about underlying storage infrastructure.
+
+Two ways exists to provision storage for a cluster
+
+- Static Provisioning: requires the cluster adminitrator to create persitant volumes manually.
+- Dynamic provisioning: Uses storage classes to create prestistant volumes on demand. 
+
+Administrators can use storage classesto provide persistant storage. Storage classes describe types of
+storage for the cluster. Cluster administrators create storage classes to manage storage service or 
+storage tiers of a service. Instead of specifying provisioned storage PVCsrefer to a storage class.
+
+Developers uses PVCsto add persistent storage to their application without the need to know the details
+about the storage. With static provisioning, developers reuses PVs or ask cluster administrators to manually
+create PVs for their applicaion. With dynamic provisioning developers declare storage requiremets for
+the applicaions and the cluster creats a PV to fill the request.
+
+
+### Persistent Volumes (PV)
+
+All storage are not equal, vary in cost, performance and reliability. Different storage types are usually
+available for each Kubernetes cluster.
+
+Commonly used storage volumes types
+
+- configMaps  
+	The configMaps volume provides the application configuration data. The configMaps resource makes
+	sure that configuraion of the applicaion is portable across environments and can be version-controlled.
+
+- emptyDir  
+	Provides a volume per pod for scratch data. Empty after provisioning and often required for shotlived 
+	storage.
+
+- hostPath  
+	A hostPath volume mounts a file or directory from the hostnode into the pod. To use this volume the
+	cluster administrtrator must configure pods to run as privileged. Provides access to other pods in
+	the same node
+
+	It is not recommended by to be used by Red Hat in production, can be used for development or testing
+	on a single node. Even if pods are not in need of a hostPath volumen it offers a quick option for
+	testing.
+
+- iSCSI  
+	Internet Small Computer Interface (iSCSI) and IP based standard that provides block level access
+	to storage devices. With iSCSI applications can consume persistent storage from iSCSI targets.
+
+- local  
+	Using local persistent volumes to access local storage devices, partitions or disk, by using the
+	standard PVS interface. Local volumes are subject to the underlying node and not suited for all
+	applications.
+
+- NFS  
+	An NFS (Network File System) is accessable for mutiple pods at the same time and therefore provide
+	shared data between pods. The NFS volume type is commonly used becaruse of its ability to share
+	data safely. Reh Hat recommends to use NFS only for none production systems.
+
+
+#### Volume Access Mode
+
+Persistent volume provides vary in capabilities. A volume access mode can be specified for it supported
+modes. Exampl: NFS can support multiple read/write clients but a specific NFS PV might be expored on
+the server as read-only. 
+
+OpenShift defines the following access modes
+
+| Access mode      | Abbreviation | Description |
+|---               |---           |--- |
+| ReadWriteOnce    | RWO          | A single node mounts the volume as read/write. Multiple pods on that single node can access the volume simultaneously. |
+| ReadWriteOncePod | RWOP         | A single pod in the cluster mounts the volume as read/write. |
+| ReadOnlyMany     | ROX          | Many nodes mount the volume as read-only. |
+| ReadWriteMany    | RWX          | Many nodes mount the volume as read/write. |
+
+Developers must select the volume types that supports the required access level (mode) by the application.
+
+Examples of supported access modes
+
+| Volume type | RWO | RWOP | ROX | RWX |
+|---          |---  |---   |---  |---  |
+| configMap   | Yes | Yes  | No  | No  |
+| emptyDir    | Yes | Yes  | No  | No  |
+| hostPath    | Yes | Yes  | No  | No  |
+| iSCSI       | Yes | Yes  | Yes | No  |
+| local       | Yes | Yes  | No  | No  |
+| NFS         | Yes | Yes  | Yes | Yes |
+
+
+#### Volume Modes
+
+Kubernets supports two volume modes for persistant volumes: *Filesystem* and *Block*. If the volume mode
+is not defined for a volume, then Kubernets assigns the default volume mode *Filesystem* to the volume.
+
+OpenShift can provision raw block volumes. These block do not have a filesyste, can provide benefits
+for applicaions that either write to the disk directly or implements their own storage service. Raw
+block volumes are provisioned by specifying volumeMode: Block in the PV and PVC specification.
+
+Examples of options with block volume support.
+
+| Volume plug-in                    | Manually provisioned | Dynamically provisioned |
+|---                                |---                   |--- |
+| AWS EBS                           | Yes                  | Yes |
+| Azure disk                        | Yes                  | Yes |
+| Cinder                            | Yes                  | Yes |
+| Fibre channel                     | Yes                  | No |
+| GCP                               | Yes                  | Yes |
+| iSCSI                             | Yes                  | No |
+| local                             | Yes                  | No |
+| Red Hat OpenShift Data Foundation | Yes                  | Yes |
+| VMware vSphere                    | Yes                  | Yes |
+
+
+### Manually Creating a PV
+
+Administrators use the Persistent Volume manifest files to manually create persistent volumes. Using
+the PersistentVolume resource type.
+
+	Example of creating a persistent volume from a fiber channel storage device
+	that uses block mode
+	-----
+	apiVersion: v1
+	kind: PersistentVolume #1
+	metadata:
+	  name: block-pv #2
+	spec:
+	  capacity:
+		storage: 10Gi #3
+	  accessModes:
+		- ReadWriteOnce #4
+	  volumeMode: Block #5
+	  persistentVolumeReclaimPolicy: Retain #6
+	  fc: #7
+		targetWWNs: ["50060e801049cfd1"]
+		lun: 0
+		readOnly: false
+		
+	Explaination to the manifest for a persistent volume
+	-----
+	#1: PersistentVolume is the resource type for PVs.
+	#2: Provide a name for the PV, which subsequent claims use to access the PV.
+	#3: Specify the amount of storage that is allocated to this volume.
+	#4: The storage device must support the access mode that the PV specifies.
+	#5: The volumeMode attribute is optional for Filesystem volumes, but is required for Block volumes.
+	#6: The persistentVolumeReclaimPolicy determines how the cluster handles the PV when the PVC is
+		deleted. Valid options are Retain or Delete.
+	#7: The remaining attributes are specific to the storage type. In this example, the fc object
+		specifies the Fiber Channel storage type attributes.
+	
+	'oc create -f my-fc-volume.yaml'
+	Creates the above PV resource, if its name were "my-fc-volume.yaml", when an administrator runs
+	the command.
+
+To create a PV in the OpenShift web console, login as administrator an go to "Storage -> PersistentVolumes"
+
+
+### Persistent Volume Claims
+
+A persistent volume claim (PVC) resource is a request from an application for storage. A PVC specifies
+the minimal storage characteristics such as capacity and access mode. A PVC does not specify a storage
+type (technology) such as iSCSI or NFS.
+
+The lifespan of a PVC is tied to the namespace not the pod. Mutliple pods in the same namespace with 
+different applications (workloads) can connect to the same PVC. It is also possible connect storage
+to and detach storage from different application pods, to initialize, convert, migrate or the backup.
+
+Kubernetes matches a PVC to a PV resources that satisfy the requirements of the claim, it is not an
+exact match.
+
+- A PVC might be bound to a PV with a larger disk then requested. 
+- A PVC that specified single access might be bound to a PV that is shareable for multiple concurrent
+accesses.
+- ...
+
+Instead of enforcing, PVCs declares what the an application needs and which Kubernetes tries to provide
+at best efford.
+
+
+#### Creating a PVC
+
+A PVC belongs to a project and developers need to specify the applicaions needs, access mode, size, ...
+A PVC can not be shared between projects. Developers us a PVC to get access to a PV. Persistent volumes
+are not exclusice to projects and are accessable across the entire OpenShift cluster. After a PV is
+bound to a PVC then the PV can not be bound to another PVC.
+
+To add a volume to a deployment a PersistentVolumeClaim resource is needed to be created and add it
+to the applicaion as a volume. A PVC can either be created by a Kubernetes manifest or the 'oc set volume ...'
+command. In addition either to create a PVC or using an existing PVC the 'oc set volumes ...' command
+can modify a deployment to mount the PVC as avolumewithin the pod.
+
+	Example of adding a volume to an applicaion, using the 'oc set volumes ...'
+	-----
+	'oc set volumes deployment/example-application \ #1
+	--add \ #2
+	--name example-pv-storage \ #3
+	--type persistentVolumeClaim \ #4
+	--claim-mode rwo \ #5
+	--claim-size 15Gi \ #6
+	--mount-path /var/lib/example-app \ #7
+	--claim-name mypvc' #8
+	
+	Explaination to the 'oc set volumes ...' command
+	-----
+	#1: Specify the name of the deployment that requires the PVC resource.
+	#2: Setting the add option to true adds volumes and volume mounts for containers.
+	#3: The name option specifies a volume name. If not specified, a name is autogenerated.
+	#4: The supported types, for the add operation, include emptyDir, hostPath, secret, configMap,
+		and persistentVolumeClaim.
+	#5: The claim-mode option defaults to ReadWriteOnce. The valid values are ReadWriteOnce (RWO),
+		ReadWriteOncePod (RWOP), ReadWriteMany (RWX), and ReadOnlyMany (ROX).
+	#6: Create a claim with the given size in bytes, if specified along with the persistent volume type.
+		The size must use SI notation, for example, 15, 15 G, or 15 Gi.
+	#7: The mount-path option specifies the mount path inside the container.
+	#8: The claim-name option provides the name for the PVC, and is required for the persistentVolumeClaim
+		type.
+
+	The above command creates a PVC resource and adds it to the application as a volume within the pod.
+	
+	The command updates the deployment for the application with volumeMounts and volumes specifications.
+	-----
+	apiVersion: apps/v1
+	kind: Deployment
+	metadata:
+	  ...
+	  namespace: storage-volumes #1
+	  ...
+	spec:
+	  ...
+	  template:
+	  ...
+		spec:
+	  ...
+		    volumeMounts:
+		    - mountPath: /var/lib/example-app #2
+		      name: example-pv-storage #3
+	  ...
+		  volumes:
+		  - name: example-pv-storage #4
+		    persistentVolumeClaim:
+		      claimName: mypvc #5
+	  ...
+
+	Explaination to the above manifest
+	-----
+	#1: The deployment, which must be in the same namespace as the PVC.
+	#2: The mount path in the container.
+	#3, #4: The volume name, which is used to specify the volume that is associated with the mount.
+	#5: The claim name that is bound to the volume.
+	
+	Example of a PVC manifest to create a PersistentVolumeClaim object
+	-----
+	apiVersion: v1
+	kind: PersistentVolumeClaim #1
+	metadata:
+	  name: mypvc #2
+	  labels:
+		app: example-application
+	spec:
+	  accessModes:
+		- ReadWriteOnce #3
+	  resources:
+		requests:
+		  storage: 15Gi #4
+	
+	Explaination to the PVC manifest
+	-----
+	#1: PersistentVolumeClaim is the resource type for a PVC.
+	#2: Use this name in the claimName field of the persistentVolumeClaim element in the volumes section
+		of a deployment manifest.
+	#3: Specify the access mode that this PVC requests. The storage class provisioner must provide this
+		access mode. If persistent volumes are created statically, then an eligible persistent volume 
+		must provide this access mode.
+	#4: The storage class creates a persistent volume that matches this size request. If persistent
+		volumes are created statically, then an eligible persistent volume must be at least the requested
+		size.
+	
+	'oc create -f pvc_file_name.yaml'
+	Developers can use the 'oc create ...' command to create the PVC from a manifest file
+	
+	'oc get pvc' ->
+		NAME   STATUS  VOLUME    CAPACITY  ACCESS MODES  STORAGECLASS ...
+		mypvc  Bound   pvc-13... 15Gi      RWO           nfs-storage  ...
+		
+	To view PVC in the current namespace
+
+A developer can create a PVC using the OpenShift web console, go to "Storage -> PersistentVolumesClaims",
+click on "Create PersistentVolumeClaim" and complete the form by adding name, storage class, size,
+access mode and volume mode
+
+
+#### Kubernetes Dynamic Provisioning
+
+PVs are defined by PersistentVolume object which is from existing storage in the cluster. The cluster
+adminitrator must statically provision some storage types. The Kubernetes persistent volume framework
+can use a StorageClass object to dynamically provision PVs.
+
+Creating PVCs developers specify the size, access mode and a storage class to describe and classify
+the storage The OpenShift control node wathces for new PVCs and binds a new PVC to an appropriate PV.
+If an appropriate PV does not exists then a provisioner for the storage class creates one.
+
+Claims remains unbound indefinitely if a matchnig does not exists or if a volume can not be created
+with any availble provisioner that services a storage class. Claims are bound when a matching is available.
+Example: Cluster with many manually provisioned 50 GiB volumes would not match a PVC that requests
+100 GiB. The PVC can be bound when a 100 GiB PV is added to the cluster.
+
+	'oc get storageclass' ->
+		NAME                  PROVISIONER ...
+		lvms-vg1              topolvm.io  ...
+		nfs-storage (default) k8s-sigs.io/nfs-subdir-external-provisioner
+		
+	View the storage classes that the current cluster provides.
+	
+	The nfs-storage storage class is marked as the default storage class. When a default storage class
+	is configured the PVC must explicit name any other storage class to use or can set the storageClassName
+	annotation to "", to be bound to a PV without a storage class.
+
+Using the 'oc set volumes ...' command
+
+	'oc set volumes deployment/example-application \
+	--add --name example-pv-storage --type pvc \
+	--claim-class nfs-storage --claim-mode rwo --claim-size 15Gi \
+	--mount-path /var/lib/example-app --claim-name mypvc'
+
+	Using the command 'oc set volume ...' with a "--claim-class" flag to specify a dynamically provisioned
+	PV.
+
+NOTE!  
+Because a cluster administrator can change the default storage class, Red Hat recommends that you always
+specify the storage class when you create a PVC.
+
+
+#### PV and PVC Lifecycles
+
+When creating a PVCs a request a specific amount of storage, an access mode and a storage class. Kubernetes
+binds every PVCs to an appropriate PV. If not an appropriate PV does not exists then a provisioner for
+the storage class creates one.
+
+![From REDHAT Academy](openshift/pv-lifecycle.svg)
+
+PVs follow a lifecycle based on their relationship to the PVC.
+
+- Available  
+	After a PV is created, it becomes available for any PVC to use in the cluster in any namespace.
+
+- Bound  
+	A PV that is bound to a PVC is also bound to the same namespace as the PVC, and no other PVC can
+	use it.
+
+- In Use  
+	You can delete a PVC if no pods actively use it. The Storage Object in Use Protection feature prevents
+	the removal of bound PVs and PVCs that pods are actively using. Such removal can result in data 
+	loss. Storage Object in Use Protection is enabled by default.
+	
+	If a user deletes a PVC that a pod actively uses, then the PVC is not removed immediately. PVC removal
+	is postponed until no pods actively use the PVC. Also, if a cluster administrator deletes a PV that
+	is bound to a PVC, then the PV is not removed immediately. PV removal is postponed until the PV is
+	no longer bound to a PVC.
+
+- Released  
+	After the developer deletes the PVC that is bound to a PV, the PV is released, and the storage that
+	the PV used can be reclaimed.
+
+- Reclaimed  
+	The reclaim policy of a persistent volume tells the cluster what to do with the volume after it is
+	released. A volume's reclaim policy can be Retain or Delete.
+
+Volume Reclaim policy
+
+| Policy | Description |
+|---     | --- |
+| Retain | Enables manual reclamation of the resource for those volume plug-ins that support it. |
+| Delete | Deletes both the PersistentVolume object from OpenShift Container Platform and the associated storage asset in external infrastructure. |
+
+
+#### Deleting a Persistent Volume Claim
+
+To delete a volume developers can use the 'oc delete ...' command to delete the PVC. After the PVC is
+removed the storage class reclaims the volume.
+
+	'oc delete pvc/mypvc'
+
+---
+
+## SELECTING A STORAGE CLASS FOR AN APPLICATION
+
+### Storage Class Selection
+
+
+
+
+
+
 
 
 ---
