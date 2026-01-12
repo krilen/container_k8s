@@ -2049,14 +2049,582 @@ removed the storage class reclaims the volume.
 
 ### Storage Class Selection
 
+A storage class describe the types of storage for the cluster and provision dynamic on demand. The cluster
+administrator determin the meaning of a storage class (progile in other storage systems). As an example
+a cluster can define different storage classes for development vs production use.
+
+Kubernetes supports multiple storage backends. Then may differ in cost, performance, reliability and function.
+With these different option different storage classes can be created, this lead to that developers can
+select storage that fit the needs of the applicaion. The developer do not need about the storage infrastructure
+details.
+
+An administrator sets the default storage class for dynamic provisioning. A default storage class enables
+Kuberentes to automatically provision a PVC that do not specify a storage class. Since the default storage
+class can be chnaged by the adminitrator the developer shoul explicit set the storage class for the application.
 
 
+#### Reclaim policy
+
+A developer should also think about the reclaim policy and how it may affect the application function.
+
+A reclaim policy specified what happens to the data in the PVC after the PVC is deleted. When finished
+with a volume an PVC object can be deleted that triggers the reclaim of the resource. Kubernetes releases
+the volume when the PVC is deleted but the volume is not available for another claim. The data still
+remains in the volume, when the PVC is deleted, and must be handled according to the policy. To keep the
+data choose a storage class with the *retain* reclaim policy.
+
+By using 'retain' reclaim policy when a PVC is deleted only the PVC object us deleted from the cluster.
+The PV for the PVC, the physical storage that the PV used, and the data still exists. 
+
+To reclaim the storage and us it in a cluster again the cluster administrator must take manual steps
+
+1. Delete the PV
+
+		'oc delete pv _pv-name_'
+
+	The associated asset in the external storage infrastructure, such as an Amazon Web Services (AWS)
+	Elastic Block Store (EBS), Google Compute Engine (GCE) Persistent Disk, Azure Disk, or Cinder volume,
+	still exists after the PV is deleted.
+
+1. The cluster administrator creates a new PV by using the same storage and data from the previous PV.
+	A developer can now mount the new PV and access the data from the previous PV.
+
+1. Or the cluster adminstrator can delete the data on the storage asset and then delete the asset.
+
+To automtically delete the PV, the data and the physical storage for a deleted PVC choose a storage class
+that uses *delete* reclaim policy. This policy automatically reclaims the storage when the PVC is deleted.
+The *delete* reclaim policy is the default for all storage provisioners that follow Kubernetes Container
+Storage Interface (CSI) standard. A storage class without a specific reclaim policy used the default
+*delete* reclaim policy.
+
+For more information about the Kubernetes Container Storage Interface standards, refer to the Kubernetes
+CSI Developer Documentation website at https://kubernetes-csi.github.io/docs/
+
+ 
+#### Kubernetes and Application Responsibilities
+
+Kubernets does not change how an application relates to storage, the applicaion is responsible for working
+with is storage.
+
+Kubernetes does not prevent an applicaion from inadvisable actions, like sharing data volume between
+two databases that requie exclusive access.
+
+A PVC is a storage that are mounted a bad configured application could behave unexpectedly. For example,
+you could have an iSCSI Logical Unit Number (LUN), which is expressed as a ReadWriteOnce (RWO) PVC that
+is not supposed to be shared, and then mount that same PVC on two pods of the same host. Whether this
+situation is problematic depends on the applications.
+
+Normally it is fine for two processes on the same host to share disk. Many applicaions on a personal
+machine share local disk. But nothing prevents one text editor for overwriting an other text editors
+edits in a file. Use of Kubernetes storage must be aware of this issue.
+
+Single node access (RWO) and shared access (RWO) do not ensure files can be shared safely and reliable.
+RWO - one cluster node can read and write to the PVC. RWX - a storage volume that any pod can access
+for reading or writing.
 
 
+### Use Cases for Storage Classes
+
+Administrator creates storage classes that serve the needs. A *StorageClass* object defines each storage
+class and the object has informaion about the storage provider and the mediums capabilities. The provider
+creates PVs that match specifications of the storage class. Administrators creates torage classes with
+various functional levels based on different factors.
+
+- Storage volumes modes  
+	A storage class with *block* volume mode can increase performance for applicaions that use raw block
+	devices. US a storage class with *Filesystem* volume mode support for applicaion that share files or
+	that provides file access.
+
+- Quality of service (QoS) levels  
+	A SSD provides high speed and support for frequently accessed files. Use of lower cost hard drive (HDD)
+	for less accessed files.
+
+- Administrative support tier  
+	A production tier storage class includes volumes that often are backed up.  
+	A development tier storage class might include volumes that are not configured with a backup schedule.
+
+A combination of these factors and other can be used by a storage class to best fit the need.
+
+Kubernetes matches PVCs with the best available PV that is not bound to another PVC. The PV must have the
+same access mode that are requested in the PVC and the volume size must be the same or larger that is
+requested by the PVC. The supported access modes depends on the capabilities of the storage provider.
+A PVC can specify additional requirements, like name of a storage class. If a PVC cannot find a PV that
+matches all criteria of the request the PVC enters a *pending* state until an appropriate PV becomes
+available.
+
+PVCs ca request another storage class by specifying the storageClassName attribute. By selecting this way
+ensures that the storage medium is good fit for the appliction requirements. Only PVs of the requested 
+storage class can be bound to the PVC. Cluster administrators can configure dynamic provisioners to
+service storage classes. The cluster administrators can create a PV on demand that matches the specifications
+in the PVC. 
 
 
+### Create a Storage Class
+
+A cluster administrator or a storage-admin user creates globally scoped StorageClass objects.
+The following resource shows the parameters for configuring a storage class. This example uses the
+AWS EBS object definition.
+
+	Example of a described definition for a StorageClass object
+	-----
+	apiVersion: storage.k8s.io/v1 #1
+	kind: StorageClass #2
+	metadata:
+	  name: io1-gold-storage #3
+	  annotations: #4
+		storageclass.kubernetes.io/is-default-class: 'false'
+		kubernetes.io/description: Provides RWO and RWOP volumes
+	...
+	parameters: #5
+	  type: io1
+	  iopsPerGB: "10"
+	...
+	provisioner: ebs.csi.aws.com #6
+	reclaimPolicy: Delete #7
+	volumeBindingMode: WaitForFirstConsumer #8
+	allowVolumeExpansion: true #9
+	
+	Explain the description
+	-----
+	#1: A required item that specifies the current API version.
+	#2: A required item that specifies the API object type.
+	#3: A required item that specifies the name of the storage class.
+	#4: An optional item that specifies annotations for the storage class.
+	#5: An optional item that specifies the required parameters for the specific provisioner; 
+		this object differs between plug-ins.
+	#6: A required item that specifies the type of provisioner that is associated with this
+		storage class.
+	#7: An optional item that specifies the selected reclaim policy for the storage class.
+	#8: An optional item that specifies the selected volume binding mode for the storage class.
+	#9: An optional item that specifies the volume expansion setting.
+
+
+Several attributes, such as the API version, API object type, and annotations, are common for Kubernetes
+objects, whereas other attributes are specific to storage class objects.
+
+- Parameters  
+	Can configure files types, chnage storage types, enable encryption, enable replicaion, ...  
+	Different provisioner has different parameter options, accepted parameters depend on the storage
+	provisioner. For example, the io1 value for the type parameter, and the iopsPerGB parameter, are
+	specific to EBS. An omitted parameter the storage provisioner uses the default value.
+
+- Provisioners  
+	The *provisioner* attribute identifies tha source of the storage medium plugin. Provisioners with 
+	names that begin with a kubernetes.io value are available by default in a Kubernetes cluster.
+
+- ReclaimPolicy  
+	Default reclaim policy is *delete* and the storage volume is automatically deleted when the PVC is
+	deleted. The *retain* reclaim policy does not delete the storage volume when the PVC is deleted.
+	A higher storage cost when using the *retain* reclaim policy the the *delete* since you can quicker
+	reallocate the storage.
+
+- VolumeBindMode  
+	The volumeBindMode attribute specifies how the volume attachemnt are handeled for a requesting PVC.
+	Using the default *Immediate* volumen buinding mode creates a PV to match the PVC when the PVC is
+	created, does not wait for the pod to use the PVC. The *Immediate** binding mode can also cause
+	problems for the storage backend that are topology-constrained or are not globally accessible from
+	nodes in the cluster. PVs are also bound without the knowledge of a pod's scheduling requirements,
+	which might result in unschedulable pods.
+
+	Using *WaitForConsumer* mode, the volume is created after the pod that uses the PVC is in use. With
+	this mode, Kubernetes creates PVs that conform to the pod's scheduling constraints, such as resource
+	requirements and selectors.
+
+- AllowVolumeExpansion  
+	When set to *true* the storage class specifies that the volume are allows to expand if more storage
+	is needed. A resize of the volume can be done by editing the PVC object. This feature can only grow
+	a volume not shrink it.
+
+The cluster administrator can use the *Create* option to create a storage class from a YAML file.
+The resiulting storage class is not namedspaced and are thus available for all projects in the cluster.
+
+	'oc create -f _storage-class-filename.yaml_'
+
+A sorage class can be created using the OpenShoft web console "Storage -> StorageClasses" and click
+"Create StorageClass", complete the form or YAML manifest.
+
+
+#### Cluster Storage Classes
+
+	'oc get storageclass'
+	To view the available storage class options in the cluster.
+	
+	'oc describe storageclass lvms-vg1' ->
+		IsDefaultClass:        No
+		Annotations:           description=Provides RWO and RWOP volumes
+		Provisioner:           topolvm.io
+		Parameters:            csi.storage.k8s.io/fstype=xfs,topolvm.io/device-class=vg1
+		AllowVolumeExpansion:  True
+		MountOptions:          <none>
+		ReclaimPolicy:         Delete
+		VolumeBindingMode:     WaitForFirstConsumer
+		Events:                <none>
+
+	Using the describe option a regulare user can view a storage class attributes.
+	In the above command you see the attributes from a storage class named "lvms-vg1"
+
+	The describe command can help developers to get info if the storage is a fit for an applicaion.
+	A developer can alwasy ask the cluster administartor to create a PV that fits the need of the
+	applicaion if current PV does not have the features needed for the applicaion.
+
+
+### Storage Class Usage
+
+Recall that the *oc set volume* command can add a PVC and an associated PV to a deployment. A YAML manifest
+file can declare the parameters of a PVC independently from the deployment. This method is the preferred
+option to support repeatability, configuration management, and version control. Use the storageClassName
+attribute to specify the storage class for the PVC.
+
+	Example of a PVC YAML file
+	-----
+	apiVersion: v1
+	kind: PersistentVolumeClaim
+	metadata:
+	  name: my-block-pvc
+	spec:
+	  accessModes:
+		- RWO
+	  volumeMode: Block
+	  storageClassName: storage-class-name
+	  resources:
+		requests:
+		  storage: 10Gi
+	
+	'oc create -f _my-pvc-filename.yaml_'
+	Using the *create* option to create the resouce defined in the YAML file
+
+	'oc set volume deployment/deployment-name \
+	--add --name my-volume-name \
+	--claim-name my-block-pvc \
+	--mount-path /var/tmp'
+	
+	Use the "--claim-name" option with the set volume command to add the existing PVC to a deployment.
 
 ---
+
+## MANAGE NON-SHARED STORAGE WITH STATEFUL SETS
+
+### Application Clustering
+
+Applications that uses clustering, like MySQL an Cassandra normally requires persistant storage to maintain
+the integrity of the files and data that application uses. With many application needing persistant
+storage at the same time multi-disk provisioning might not be possible because of limited resources.
+
+Shared storage solves this problem by allocating resources from a single device to multiple services.
+
+
+#### File Storage
+
+Provides a standard folder structure, ideal for applicaions that generates or consume typical values
+of orginized data. Theses applicaions that applies file based usage are common, easy to manage and is
+a affortable solution.
+
+Usage of file based solution is for data backup, archiving, file sharing and collaboration services. 
+An example of a solution is NAS (Network Attached Storage) clusters tha data centers can offer. NAS
+is a file based architecture that stores data accessiable. NAS provides a network single access point
+with some security, management and fault-tolerant capabilities. Networks can use different types of
+protocols mosy fundamental are IP (Internet Protocol) and TCP (Transmission Control Protocol).
+
+Files that are transferred with these protocols can be formatted with one of the following protocols
+
+- NFS (Network File System)  
+	Enables remote hosts to mount fil system over the network and interact with those file systems as
+	they are mounted locally.
+	
+- SMB (Server Message Block)  
+	The protocol creates an applicaion layer network protocol to access resources on a server, such as
+	file shares and shared printers.
+
+NAS solutions can provide file-based storage to applications within the same data center. This approach
+applies to the following application architectures:
+
+- Web server content
+- File sharing service
+- FTP storage
+- Backup archives
+
+They take advantage of data reliability and the ease of file sharing that are available by the file sharing.
+For file storage of data the OS and filesystem handle the locking and caching of the files.
+
+But for some applications file storage is not ideal. A major issue is poor handeling of large data sets
+or unstructured data.
+
+
+#### Block Storage
+
+Block storage solutions like SAN (Storage Area Network) and iSCSI technologies, gives access to raw
+block devices for applicaion storage. The blocks devices function as independent storage volumes like
+physical drives in servers are may require formatting and mounting for applicaion access.
+
+Are ideal when application requiers faster access for optimizing computationally heavy data workloads.
+Because of communicationg at the raw device level, instead on OS system layer access, the applicaions
+that uses block-level storage are more effective.
+
+Block level enables data distribution on blocks across the storage volume. Blocks also use metadata,
+including unique identification number for each block of data for quick retrival and reassembly of blocks
+for reading.
+
+SAN ans iSCSI gives applicaions with block level volumes from network based storage pools. Using block 
+level access for storage volumes is common for the following applicaion architectures.
+
+- SQL databases (single node access)
+- Virtual machines (multinode access)
+- High performance data access
+- Server side processing applicaions
+- Multiple block devices RAID configurations
+
+Using severla block devices in a RAID configuration gives the applicaion a higt data integrity and performance
+that different RAID types provides.
+
+With OpenShift dutomized storage classes can be created for the applications. With NAS and SAN OpenShift
+can use the NFS protocol for file based storage or block level protocol for block storage.
+
+
+### Stateful Sets
+
+A stateful applications acts according to past transactions and affects the current and future states
+of the applicaions. Using this type of applicaion helps the application can recover from failure by 
+starting at a certain point.
+
+A stateful set are a set of pods with consistent identities. The identies are defined as a network with
+a single stable DNS, hostname and storage from volumes as it specifies. A stateful set guarantees that
+a given network identity mpas to the same storage identity.
+
+Deployments represent a set of containers in a pod. Each deployment may have replicas that can scale
+up or down as needed.A replicaset is native Kubernetes API object to ensure the correct number of pods
+are running. Deployments are used for stateless applications by default but they can also be used for
+stateful applications by attaching a persistant volume. All pods in a deployment used the same PVC.
+
+In contrast with deployments, stateful set pods do not share a persistent volume. Instead each stateful
+set pod has its own unique persistent volume. Pods are created without a replica set and each records
+its own transactions. Each replica has its own identifier, which is maintained in any rescheduling.
+Configuration must be done at applicaion level clustering so the stateful pods have the same data.
+
+Stateful sets are best for applicaions like databases that require identities and non-shared storage.
+
+
+#### Headless Services for Stateful Sets
+
+Stateful sets require a headless service to provide the stable network identity for its pods. A normal
+service gets a single stable IP address (clusterIP) for loadbalancing, a headless service does not have
+a clusterIP address.
+
+A headless service is created by explicitly setting its clusterIP field to None. For the DNS lookup on
+a headless the DNS server returns the IP addresses of all the individual pods that the service selects.
+This allows clients to connect to directly to a specific pod instead of going through a loadbalancer.
+
+For stateful set this is important. When associate a stateful set with a headless service each pod in
+the set gets a unique and predictable DNS entry. Following the format
+*_pod_._service_name_._namespace_.svc.cluster.local*, as example a pod named *dbserver-o* that has a 
+headless service *mysql-headless* can be reached at *dbserver-0.mysql-headless FQDN.
+
+This stable identiry allows peer discovery an direct communication between pods in a clustered applicaion.
+This is crucial for applicaions like distributed databses where specific pods must adress directly for
+operations such as writingor replication.
+
+
+### Working with Stateful Sets
+
+With Kubernetes you can use manifest files you can specify the intended configuration of a stateful
+set. Define the name of the applicaion, labels, image source, storage, environment variables, ...
+
+	Example of a Yaml manifest file for a staeful set named dbserver
+	-----
+	apiVersion: apps/v1
+	kind: StatefulSet
+	metadata:
+	  name: dbserver #1
+	spec:
+	  selector:
+		matchLabels:
+		  app: database #2
+	  replicas: 3 #3
+	  serviceName: mysql #4
+	  template:
+		metadata:
+		  labels:
+		    app: database #5
+		spec:
+		  containers:
+		  - env: #6
+		    - name: MYSQL_USER
+		      valueFrom:
+		        secretKeyRef:
+		          key: user
+		          name: sakila-cred
+		    image: registry.ocp4.example.com:8443/redhattraining/mysql-app:v1 #7
+		    name: database #8
+		    ports: #9
+		    - containerPort: 3306
+		      name: database
+		    volumeMounts: #10
+		    - mountPath: /var/lib/mysql
+		      name: data
+		  terminationGracePeriodSeconds: 10
+	  volumeClaimTemplates:
+	  - metadata:
+		  name: data
+		spec:
+		  accessModes: [ "ReadWriteOncePod" ] #11
+		  storageClassName: "lvms-vg1" #12
+		  resources:
+		    requests:
+		      storage: 1Gi #13
+	
+	Explaination of the manifest file
+	-----
+	#01: Name of the stateful set.
+	#02: Application labels.
+	#03: Number of replicas.
+	#04: Name of the service that governs the stateful set. This service must exist before the
+		 stateful set.
+	#05: Application labels.
+	#06: Environment variables, which can be defined explicitly or by using a secret object.
+	#07: Image source.
+	#08: Container name.
+	#09: Container ports.
+	#10: Mount path information for the persistent volumes for each replica. Each persistent volume
+	 	 has the same configuration.
+	#11: The access mode of the persistent volume. The valid values are ReadWriteOncePod,
+		 ReadWriteOnce, ReadWriteMany, and ReadOnlyMany. The ReadWriteOncePod mode is recommended
+		 for production use.
+	#12: The storage class that the persistent volume uses.
+	#13: Size of the persistent volume.
+	
+	'oc create -f statefulset-dbserver.yml'
+	Create the stateful set named dbserver
+	
+	'oc get statefulset' ->
+		NAME       READY   AGE
+		dbserver   3/3     6s
+		
+	Verify the creation of the stareful service
+	
+	'oc get pods' ->
+		NAME         READY   STATUS    RESTARTS   AGE
+		dbserver-0   1/1     Running   0          85s
+		dbserver-1   1/1     Running   0          82s
+		dbserver-2   1/1     Running   0          79s
+	
+	Infomation about each pod that gets a unique name (including it index). Each pod is starts one 
+	at a time, the next pod is not started until the one before reports being ready.
+
+NOTE!  
+Stateful sets can be created only by using manifest files. The oc and kubectl CLIs do not have
+commands to create stateful sets imperatively.
+
+	Example of a Yaml manifest for a headless service named mysql for the dbserver stateful set
+	-----
+	apiVersion: v1
+	kind: Service
+	metadata:
+	  name: mysql #1
+	  labels:
+		app: database
+	spec:
+	  ports:
+	  - port: 3306
+		name: mysql
+	  clusterIP: None #2
+	  selector:
+		app: database #3
+	
+	Explaination to the headless service manifest file
+	-----
+	#1: The name of the headless service.
+	#2: Set the clusterIP field to None to make the service headless.
+	#3: The service selector must match the labels of the pods that the stateful set created.
+	
+	'oc create -f headless-service.yaml'
+	Creating the mysql headless service
+	
+	'oc get svc' ->
+		NAME            TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
+		service/mysql   ClusterIP   None         <none>        3306/TCP   5s
+	
+	Verify the creation of the headless service
+	
+	'oc get endpoints' ->
+		NAME        ENDPOINTS                                      AGE
+		mysql       10.8.0.45:3306,10.8.0.54:3306,10.8.0.61:3306   2m
+	
+	Getting the service endpoints that is the pods IP addresses.
+	
+	'oc rsh dbserver-0 curl -v telnet://dbserver-0.mysql:3306' ->
+		Rebuilt URL to: telnet://dbserver-0.mysql:3306/
+		Trying 10.8.0.45...
+		TCP_NODELAY set
+		Connected to dbserver-0.mysql (10.8.0.45) port 3306 (#0)
+	
+	To resolve a pods IP adress by using the headless service, the pod "dbserver-0" has the
+	hostname "dbserver-0.mysql"
+	
+	'oc get pvc' ->
+		NAME             STATUS  VOLUME      CAPACITY ACCESS MODES ...
+		data-dbserver-0  Bound   pvc-c28...  1Gi      RWO        ...
+		data-dbserver-1  Bound   pvc-ddb...  1Gi      RWO        ...
+		data-dbserver-2  Bound   pvc-830...  1Gi      RWO        ...
+	
+	The stateful set created, for each pod, a PVC. Each PVC have an unique and stable name in 
+	the "data-_statefulset_name_-ordinal-index_" format.
+	
+	'oc describe pod dbserver-0' ->
+		...
+		Volumes:
+		  data:
+			Type:       PersistentVolumeClaim (a reference to a PersistentVolumeClaim in the same namespace)
+			ClaimName:  data-dbserver-0
+		...
+		
+	'oc describe pod dbserver-1' ->
+		...
+		Volumes:
+		  data:
+			Type:       PersistentVolumeClaim (a reference to a PersistentVolumeClaim in the same namespace)
+			ClaimName:  data-dbserver-1
+		...
+	
+	'oc describe pod dbserver-2' ->
+		...
+		Volumes:
+		  data:
+			Type:       PersistentVolumeClaim (a reference to a PersistentVolumeClaim in the same namespace)
+			ClaimName:  data-dbserver-2
+		...
+	
+	Each pod attaches to its associated PVC. Each PVC that are attached to a pod in the stateful
+	set.
+	
+
+The data is replicated between the pod at the application level. AS an example the "dbserver" stateful
+set you can configure the first pod to be primary and the other two pods as replicas. The primary pod
+handles read an write requests and the replica pods sync with the primary pod for data replication.
+
+	'oc scale statefulset/dbserver --replicas 4' ->
+		NAME         READY   STATUS    RESTARTS  ...
+		dbserver-0   4/4     Running   0         ...
+	
+	Update the number of replicase of the stateful set.
+	
+	'oc delete statefulset dbserver' ->
+		statefulset.apps "dbserver" deleted
+	
+	Delete a stateful set
+	
+	'oc get pvc' -> 
+		NAME             STATUS  VOLUME      CAPACITY ACCESS MODES ...
+		data-dbserver-0  Bound   pvc-c28...  1Gi      RWO        ...
+		data-dbserver-1  Bound   pvc-ddb...  1Gi      RWO        ...
+		data-dbserver-2  Bound   pvc-830...  1Gi      RWO        ...
+
+	The PVCs are not deleted after the deletion of the statefule set
+
+You are able to create a staeful set in the web console, go to "Workloads -> StatefulSets".
+Click "Create StatefulSet" and customize the Yaml manifest.
+
+---
+
+
 OLD!!!
 
 ## LIFECYCLE
