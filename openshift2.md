@@ -1,6 +1,6 @@
 # OPENSHIFT
 
-Part 2/2
+Part 2/3
 
 ## DEPLOY APPLICATIONS FROM AN IMAGE AND FROM A TEMPLATE
 
@@ -313,8 +313,9 @@ effectively scopes a bound PV to a singel namespace until the PVC is deleted.
 
 Secret provides a way to hold sensitive information, passwords, credentials, configuration files, ssh
 keys, ... A secret is mounted into the container using a volume plugin. Kubernetes can also use secrets to
-perform actions, as on pods, declare environmental variables. Secret can store any type of data. Kubernetes and OpenShift
-support different types of secrets, such as service account tokens, SSH keys and TLS certificates.
+perform actions, as on pods, declare environmental variables. Secret can store any type of data. 
+Kubernetes and OpenShift support different types of secrets, such as service account tokens, SSH keys
+and TLS certificates.
 
 	Example of a definition of a secret
 	-----
@@ -1677,7 +1678,7 @@ Administrators can use storage classesto provide persistant storage. Storage cla
 storage for the cluster. Cluster administrators create storage classes to manage storage service or 
 storage tiers of a service. Instead of specifying provisioned storage PVCsrefer to a storage class.
 
-Developers uses PVCsto add persistent storage to their application without the need to know the details
+Developers uses PVCs to add persistent storage to their application without the need to know the details
 about the storage. With static provisioning, developers reuses PVs or ask cluster administrators to manually
 create PVs for their applicaion. With dynamic provisioning developers declare storage requiremets for
 the applicaions and the cluster creats a PV to fill the request.
