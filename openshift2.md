@@ -14,340 +14,336 @@ it is clearer to refer directly to resources, services, and other components.
 
 ### Resources and Resource Definitions
 
-Kubernetes manages applications or services as a collection of resources. The resources ar configured
-as pieces for compenents in the cluster. When a resouce is created the component is not created right
-away. It is the cluster that creates the component.
+Kubernetes manages applications (or services) as a collection of resources. The resources are pieces
+in the cluster. When creating a resouce, the component does not get created at once. It is the cluster
+that creates the component, you just request the creation of the resource and the cluster does it.
 
-A *resource type is a specific component type as a pod. Kubernetes has many default resource types some 
-overlaps. OpenShift uses the Kubernetes defaults and also adds it own resource types. To add resouce
-types you can create andimport CRD.
+A *resource* type is a specific component type (such as a pod). Different default resource types exists
+some overlap. OpenShoft incluseds Kubernetes resouces types and adds its own resource types. To add resource
+types you create or import CRDs.
 
 
 ### Managing Resources
 
-Reources can be added, viewed and edited in different ways, Yaml and Json format.
+You can *add*, *view* or *edit* resouce types in different formats, commomly the Yaml format but also
+JSON format.
 
-A resouce can be deleted in batch using a label selector or by deleing the entire namespace (project)
+You can *delete* resources in batch by using the label selector. You can also delete the project or namespace.
 
 	'oc delete deployment -l app=my-app' -> "deployment.apps "my-app" deleted"
-	Deleting deployments with the label app=my-lab
+	Delete a resouce by its label
 
-As with creation of a resouce the deletion is not immediate but is a request for a deletions.
+As with creating the deletion is not immediate but is a request to the cluster.
+
 
 ### Common Resource Types and Their Uses
 
-The following resources are standard OpenShift resources:
+- Templates  
+	Like projects, templates is an addon from OpenShift. A Yaml manifest that contains parameterized
+	of one or more resources. OpenShift profives predefined templates in the *openshift* namespace
+	
+	Using the *'oc process ...'* option you can process the template into a list of resources. It will
+	replace values and generate resource definitions. To update or create the resource in the cluster
+	you must use the *'oc apply ...'* command
+	
+		'oc process -f mysql-template.yaml -o yaml' ->
+			apiVersion: v1
+			items:
+			- apiVersion: v1
+			  kind: Secret
+			  ...
+			- apiVersion: v1
+			  kind: Service
+			  ...
+			- apiVersion: v1
+			  kind: PersistentVolumeClaim
+			  ...
+			- apiVersion: apps/v1
+			  kind: Deployment
+			  ...
+		
+		Process the "mysql-template.yaml" template file and generate 4 resource definitions
+		
+		'oc process -f mysql-template.yaml --parameters' ->
+			NAME                    DESCRIPTION ...
+			...
+			MYSQL_USER              Username for MySQL user   ...
+			MYSQL_PASSWORD          Password for the MySQL connection    ...
+			MYSQL_ROOT_PASSWORD     Password for the MySQL root user.    ...
+			MYSQL_DATABASE          Name of the MySQL database accessed. ...
+			VOLUME_CAPACITY         Volume space available for data,     ...
+		
+		With the "--parameters" flag displays the parameters of the template, listing the parameters
+		of the "mysql-template" file.
 
-#### Templates
+	In Openshift you can use templates with the *'oc new ...'* command
 
-Template are an additon from OpenShift.
+		'oc new-app --template mysql-persistent' ->
+			--> Deploying template "db-app/mysql-persistent" to project db-app
+			...
+				 The following service(s) have been created in your project: mysql.
 
-A template is amanifest that contains parameterized definitions of one or more resources. Predefined
-templates are provided in the *openshift* namespace.
+						Username: userQSL
+						Password: pyf0yElPvFWYQQou
+				   Database Name: sampledb
+				  Connection URL: mysql://mysql:3306/
+			...
+				 * With parameters:
+					* Memory Limit=512Mi
+					* Namespace=openshift
+					* Database Service Name=mysql
+					* MySQL Connection Username=userQSL # generated
+					* MySQL Connection Password=pyf0yElPvFWYQQou # generated
+					* MySQL root user Password=HHbdurqWO5gAog2m # generated
+					* MySQL Database Name=sampledb
+					* Volume Capacity=1Gi
+					* Version of MySQL Image=8.0-el8
 
-A template can be processed into a list using the *process* option which replaces values and generates
-resource definitions. The definitions creates or updates resources in the cluster by using *apply* options.
+			--> Creating resources ... #1
+				secret "mysql" created
+				service "mysql" created
+				persistentvolumeclaim "mysql" created
+				deployment.apps "mysql" created
+			--> Success
+			...
+		
+		Explain
+		-----
+		#1: Several resources are created to meet the requirements of the deployment, including a secret,
+			a service, and a persistent volume claim.
 
-	'oc process -f mysql-template.yaml -o yaml' ->
+		The *'new-app'* command uses the mysql-persistent template to create a MySQL application and
+		its supporting resources.
+
+	You are also able to use template, helm charts, builder images or devfiles to create applicaitons from
+	the web console using the "Developers Catalog" page. As a "developer" go to "+Add" menu and click "All
+	Service"  in the "Developer Catalog" section to open the catalog.
+
+	Enter the applicaions name in the filter box to search for the applicaions template. Use a template
+	and change its default values, Git repo, memory limits and applicaion version.
+
+	It is also possible to create an applicaion from the "Topology" menu and by clicking "Start building
+	applictaion" (clikc the book icon). 
+
+- Pod  
+	The smallest compute unit that can be defined, deployed and managed in OpenShift. A pod runs one
+	or more containers that represent a single applicaion. Containers in a pod share resources such
+	as network and storage.
+	
+		Example of a definition of a Pod
+		-----
 		apiVersion: v1
-		items:
-		- apiVersion: v1
-		  kind: Secret
-		  ...
-		- apiVersion: v1
-		  kind: Service
-		  ...
-		- apiVersion: v1
-		  kind: PersistentVolumeClaim
-		  ...
-		- apiVersion: apps/v1
-		  kind: Deployment
-		  ...
-	
-	Processes the "mysql-template.yaml" template file and creates 4 resouces definitions.
-	
-	'oc process -f mysql-template.yaml --parameters' ->
-		NAME                    DESCRIPTION 						...
-		...
-		MYSQL_USER              Username for MySQL user				...
-		MYSQL_PASSWORD          Password for the MySQL connection	...
-		MYSQL_ROOT_PASSWORD     Password for the MySQL root user	...
-		MYSQL_DATABASE          Name of the MySQL database accessed	...
-		VOLUME_CAPACITY         Volume space available for data,	...
-
-	Using the "--parameters" flag instead displays the parametes of a template.
-
-	'oc new-app --template mysql-persistent' ->
-		Deploying template "db-app/mysql-persistent" to project db-app
-		...
-		The following service(s) have been created in your project: mysql.
-
-			Username: userQSL
-			Password: pyf0yElPvFWYQQou
-		Database Name: sampledb
-		Connection URL: mysql://mysql:3306/
-		...
-		* With parameters:
-		  * Memory Limit=512Mi
-		  * Namespace=openshift
-		  * Database Service Name=mysql
-		  * MySQL Connection Username=userQSL # generated
-		  * MySQL Connection Password=pyf0yElPvFWYQQou # generated
-		  * MySQL root user Password=HHbdurqWO5gAog2m # generated
-		  * MySQL Database Name=sampledb
-		  * Volume Capacity=1Gi
-		  * Version of MySQL Image=8.0-el8
-
-		Creating resources ... #1
-		secret "mysql" created
-		service "mysql" created
-		persistentvolumeclaim "mysql" created
-		deployment.apps "mysql" created
-		--> Success
-		...
-	
-	Using the template with the 'new-app' option in OpenShift. Using the 'new-app' option command with
-	the "mysql-persistent" template to create a MySQL application and its supporting resources
-	
-	Explaination
-	#1: Several resources are created to meet the requirements of the deployment, including a secret,
-	a service, and a persistent volume claim.
-
-It is possible to use template, helm carts, builder imgaes or dev iles to create aopplications from the
-OpenShift web console. Using The "Developer Catalog" and as a developer go to "+Add" menus and click
-"All Services" in the "Developer Catalog" section på open the catalog. Enter the an application name
-to filter and search for an applicaion's template. Now you can change the default values, GIt repo, 
-memory limit, ...
-
-It is also possible to create an application from the "Topology" menu and click "Start building application"
-(or click the book icon).
-
-
-#### Pod
-
-The pod is the smallest comput unit that can be dined and manages in OpenShift. A pod run one or more
-containers that represent a single application. The containers in the pod share resources such as networking
-and storage
-
-	Example of a definition of a pod
-	-----
-	apiVersion: v1
-	kind: Pod #1
-	metadata: #2
-	  annotations: {}
-	  labels:
-		deployment: docker-registry-1
-	  name: registry
-	  namespace: pod-registries
-	spec: #3
-	  containers:
-	  - env:
-		- name: OPENSHIFT_CA_DATA
-		  value:
-		image: openshift/origin-docker-registry:v0.6.2
-		imagePullPolicy: IfNotPresent
-		name: registry
-		ports:
-		- containerPort: 5000
-		  protocol: TCP
-		resources: {}
-		securityContext: {}
-		volumeMounts:
-		- mountPath: /registry
-		  name: registry-storage
-	  dnsPolicy: ClusterFirst
-	  imagePullSecrets:
-	  - name: default-dockercfg-at06w
-	  restartPolicy: Always
-	  serviceAccount: default
-	  volumes:
-	  - emptyDir: {}
-		name: registry-storage
-	status: #4
-	  conditions: {}
-	
-	Explanation for the pod definition
-	-----
-	#1: The resource kind is set to Pod.
-	#2: Information that describes your application, such as the name, project, attached labels, and
-		annotations.
-	#3: Section where the application requirements are specified, such as the container name, the container
-		image, environment variables, volume mounts, network configuration, and volumes.
-	#4: Indicates the last condition of the pod, such as the last probe time, the last transition time,
-		the status setting as true or false, and more.
-
-
-#### Deployments
-
-The deploument describe the state of the application as apod template (componenet) should have when 
-deployed.
-
-	Example of a definition of a deployment
-	-----
-	apiVersion: apps/v1
-	kind: Deployment 1
-	metadata:
-	  name: hello-openshift 2
-	spec:
-	  replicas: 1 3
-	  selector:
-		matchLabels:
-		  app: hello-openshift
-	  template: 4
-		metadata:
+		kind: Pod #1
+		metadata: #2
+		  annotations: {}
 		  labels:
-		    app: hello-openshift
-		spec:
+			deployment: docker-registry-1
+		  name: registry
+		  namespace: pod-registries
+		spec: #3
 		  containers:
-		  - name: hello-openshift 5
-		    image: openshift/hello-openshift:latest 6
-		    ports: 7
-		    - containerPort: 80
-		    
-	Explanation for the deployment definition
-	-----
-	#1: The resource kind is set to Deployment.
-	#2: Name of the deployment resource.
-	#3: Number of running instances.
-	#4: Section to define the metadata, labels, and the container information of the deployment resource.
-	#5: Name of the container.
-	#6: Resource of the image for creating the deployment resource.
-	#7: Port configuration, such as the port number, the name of the port, and the protocol.
+		  - env:
+			- name: OPENSHIFT_CA_DATA
+			  value:
+			image: openshift/origin-docker-registry:v0.6.2
+			imagePullPolicy: IfNotPresent
+			name: registry
+			ports:
+			- containerPort: 5000
+			  protocol: TCP
+			resources: {}
+			securityContext: {}
+			volumeMounts:
+			- mountPath: /registry
+			  name: registry-storage
+		  dnsPolicy: ClusterFirst
+		  imagePullSecrets:
+		  - name: default-dockercfg-at06w
+		  restartPolicy: Always
+		  serviceAccount: default
+		  volumes:
+		  - emptyDir: {}
+			name: registry-storage
+		status: #4
+		  conditions: {}
+		
+		Explaination of the definition of a Pod
+		-----
+		#1: The resource kind is set to Pod.
+		#2: Information that describes your application, such as the name, project, attached labels,
+			and annotations.
+		#3: Section where the application requirements are specified, such as the container name, the
+			container image, environment variables, volume mounts, network configuration, and volumes.
+		#4: Indicates the last condition of the pod, such as the last probe time, the last transition
+			time, the status setting as true or false, and more.
+
+- Deployments  
+	A deployment is the intended state of a component of the applicaion as a pod template. A deployment
+	manages one or more replica sets.
+	
+		Example of a definition of a Deployment
+		-----
+		apiVersion: apps/v1
+		kind: Deployment #1
+		metadata:
+		  name: hello-openshift #2
+		spec:
+		  replicas: 1 #3
+		  selector:
+			matchLabels:
+			  app: hello-openshift
+		  template: #4
+			metadata:
+			  labels:
+				app: hello-openshift
+			spec:
+			  containers:
+			  - name: hello-openshift #5
+				image: openshift/hello-openshift:latest #6
+				ports: 7
+				- containerPort: 80
+		
+		Explaination of the definition of a Deployment
+		-----
+		#1: The resource kind is set to Deployment.
+		#2: Name of the deployment resource.
+		#3: Number of running instances.
+		#4: Section to define the metadata, labels, and the container information of the deployment
+			resource.
+		#5: Name of the container.
+		#6: Resource of the image for creating the deployment resource.
+		#7: Port configuration, such as the port number, the name of the port, and the protocol.
+
+- Projects  
+	OpenShift adds projects to enhance Kubernetes namespaces. A project is a Kuberneters namespace with
+	additional annotations and it the primary way of managing access to resources for normal users. 
+	A project can be created from a template and must use RBAC for organization and permission management.
+	Administrators grants cluser users access to a project, if the sluseter users is allowed to create
+	projects then the user automatially has access to their created projects.
+
+	Projects provide logical and organizational isolation to separate your application component resources.
+	Resources in one project can access resources in other projects, but not by default.
+
+		Example of a definition of a Project
+		-----
+		apiVersion: project.openshift.io/v1
+		kind: Project #1
+		metadata:
+		  name: test #2
+		spec:
+		  finalizers: #3
+		  - kubernetes
+		
+		Explaination of the definition of a Project
+		-----
+		#1: The resource kind is set to Project.
+		#2: Name of the project.
+		#3: A finalizer is a special metadata key that tells Kubernetes to wait until a specific
+			condition is met before it fully deletes a resource.
 
 
-#### ProjectS
+- Services  
+	Using a servie internal pod to pod communation can be configured. An applicaion sends a request 
+	to the service name and port. OpenShift provides virtual network that rerouytes requests to pods
+	that the service targets by using labels.
 
-Openshift add projects to Kubernetes namespace to enhance the function. A project is a Kubernetes namespace
-with additional annotations and is the primary way to manage access to resources for regular users. 
-Project can be created from templates and must use RBAC for orginization and permission management.
-Administrators grants cluster users access to a project. If a cluster user is allowed to create projects
-then they are automatically have acces to create projects.
-
-Projects provide logical and organizational isolation to separate your application component resources.
-Resources in one project can access resources in other projects, but not by default. 
-
-	Example of a definition of a project
-	-----
-	apiVersion: project.openshift.io/v1
-	kind: Project #1
-	metadata:
-	  name: test #2
-	spec:
-	  finalizers: #3
-	  - kubernetes
-
-	Explanation for the project definition
-	-----
-	#1: The resource kind is set to Project.
-	#2: Name of the project.
-	#3: A finalizer is a special metadata key that tells Kubernetes to wait until a specific condition
-		is met before it fully deletes a resource.
-
-
-#### Services
-
-A service is used to configure internal pod-to-pod network communication in OpenShift. Applications sends
-request to the service name and port. OpenShift provides a virtual network that reroutes such requests
-to the pods that the service target by using labels.
-
-	Example of a definition of a service
-	-----
-	apiVersion: v1
-	kind: Service #1
-	metadata:
-	  name: docker-registry #2
-	  namespace: test #3
-	spec:
-	  selector:
-		app: MyApp #4
-	  ports:
-	  - protocol: TCP #5
-		port: 80 #6
-		targetPort: 9376 #7 
-
-	Explanation for the service definition
-	-----
-	#1: The resource kind is set to Service.
-	#2: Name of the service.
-	#3: Project name where the service resource exists.
-	#4: The label selector identifies all pods with the attached app=MyApp label and adds the pods to
-		the service endpoints.
-	#5: Internet protocol is set to TCP.
-	#6: Port that the service listens on.
-	#7: Port on the backing pods, which the service forwards connections to.
+		Example of a definition of a Service
+		-----
+		apiVersion: v1
+		kind: Service #1
+		metadata:
+		  name: docker-registry #2
+		  namespace: test #3
+		spec:
+		  selector:
+			app: MyApp #4
+		  ports:
+		  - protocol: TCP #5
+			port: 80 #6
+			targetPort: 9376 #7
+			
+		Explaination of the definition of a Service
+		-----
+		#1: The resource kind is set to Service.
+		#2: Name of the service.
+		#3: Project name where the service resource exists.
+		#4: The label selector identifies all pods with the attached app=MyApp label and adds the
+			pods to the service endpoints.
+		#5: Internet protocol is set to TCP.
+		#6: Port that the service listens on.
+		#7: Port on the backing pods, which the service forwards connections to.
 
 
-#### Persistent Volume Claims (PVC)
+- Persistent Volume Claims  
+	OpenShift uses Kubernetes persistent volume (PV) to provision persistent storage for a cluster. 
+	Developers can use persistent volumes claims (PVCs) to request PV resources without having knowledge
+	of the underlying infrastructure. After a PV is bound a PVC that PV can not eb bound to additional
+	PVCs. PVCs are namespaced objects and PVs are globally objects, a binding will therefore bind a PV
+	to a namespaced until the binding is deleted.
+	
+		Example of a definition of a Persistent Volume Claims
+		-----
+		apiVersion: v1
+		kind: PersistentVolumeClaim #1
+		metadata:
+		  name: mysql-pvc #2
+		spec:
+		  accessModes:
+			- ReadWriteOnce #3
+		  resources:
+			requests:
+			  storage: 1Gi #4
+		  storageClassName: nfs-storage #5
+		status: {}
+			
+		Explaination of the definition of a Persistent Volume Claims
+		-----
+		#1: The resource kind is set to PersistentVolumeClaim.
+		#2: Name of the service.
+		#3: The access mode, to define the read/write and mount permissions.
+		#4: The storage of the PVC.
+		#5: Name of the StorageClass that the claim requires.
 
-OpenShift uses Kubernetes persistent volume (PV) frameworks to enable cluster administratiors to provision
-persistent storage for a cluster. Developers can use a PVS to request a PV resource without having specific
-knowledge of the underlying storage infrastructure. After a PV is bounded to a PVS that PV can not be
-bounded to any additional PVCs. PVS are namespaced objects and PV are globally scoped objects. This binding
-effectively scopes a bound PV to a singel namespace until the PVC is deleted.
 
-	Example of a definition of a persistent volume claim
-	-----
-	apiVersion: v1
-	kind: PersistentVolumeClaim #1
-	metadata:
-	  name: mysql-pvc #2
-	spec:
-	  accessModes:
-		- ReadWriteOnce #3
-	  resources:
-		requests:
-		  storage: 1Gi #4
-	  storageClassName: nfs-storage #5
-	status: {}
+- Secrets  
+	Secrets hold sensitive information, such as passwords, credentials, special config files, ssh keys,
+	... A secret is mounted in a containers by using a volume plugon. Secrets can store amy type of 
+	data. OpenShift and Kubernetes supports different types of secrets such as service account tokens,
+	SSH keys, and TLS certificates.
 
-	Explanation for the pvc definition
-	-----
-	#1: The resource kind is set to PersistentVolumeClaim.
-	#2: Name of the service.
-	#3: The access mode, to define the read/write and mount permissions.
-	#4: The storage of the PVC.
-	#5: Name of the StorageClass that the claim requires.
-
-
-#### Secrets
-
-Secret provides a way to hold sensitive information, passwords, credentials, configuration files, ssh
-keys, ... A secret is mounted into the container using a volume plugin. Kubernetes can also use secrets to
-perform actions, as on pods, declare environmental variables. Secret can store any type of data. 
-Kubernetes and OpenShift support different types of secrets, such as service account tokens, SSH keys
-and TLS certificates.
-
-	Example of a definition of a secret
-	-----
-	apiVersion: v1
-	kind: PersistentVolumeClaim #1
-	metadata:
-	  name: mysql-pvc #2
-	spec:
-	  accessModes:
-		- ReadWriteOnce #3
-	  resources:
-		requests:
-		  storage: 1Gi #4
-	  storageClassName: nfs-storage #5
-	status: {}
-
-	Explanation for the secret definition
-	-----
-	#1: The resource kind is set to Secret.
-	#2: Name of the service.
-	#3: Project name where the service resource exists.
-	#4: Specifies the type of secret.
-	#5: Specifies the encoded string and data.
-	#6: Specifies the decoded string and data.
+		Example of a definition of a Secret
+		-----
+		apiVersion: v1
+		kind: Secret #1
+		metadata:
+		  name: example-secret #2
+		  namespace: my-app #3
+		type: Opaque #4
+		data: #5
+		  username: bXl1c2VyCg==
+		  password: bXlQQDU1Cg==
+		stringData: #6
+		  hostname: myapp.mydomain.com
+		  secret.properties: |
+			property1=valueA
+			property2=valueB
+			
+		Explaination of the definition of a Secret
+		-----
+		#1: The resource kind is set to Secret.
+		#2: Name of the service.
+		#3: Project name where the service resource exists.
+		#4: Specifies the type of secret.
+		#5: Specifies the encoded string and data.
+		#6: Specifies the decoded string and data.
 
 
 ### Managing Resources from the Command Line
 
-Many Kubernetes and OpenShift commands can create or modify cluster resources. Some commands are part
-of the core Kubernetes where others are exclusive additions to OpenShift.
+Openshift and Kubernets commands can create, modify or delete resources. Some commands are from Kubernetes
+(core) and some are addons for OpenShift.
 
-Resouce management falls into two categories
+Resource management commands can be in two categories
 
 - An *imperative* command instructs what the cluster does.
 - A *declarative* command defines the state that the cluster attempts to match.
@@ -355,49 +351,45 @@ Resouce management falls into two categories
 
 #### Imperative Resource Management
 
-Using the *create* option is the imperative ways to create resiurces and is included in both the 'oc'
-and 'kubectl' command.
+The *'create'* command is an *imperative* way of creating resources and is included in both the *'oc'*
+and *'kubectl'* commands.
 
-	'oc create deployment my-app --image example.com/my-image:dev' -> "deployment.apps/my-app created"
-	The imperative command to create a deployment named "my-app" that will create pods based on a specific
-	image.
+*Imperative* = give instruction to the cluster
+
+	'oc create deployment my-app --image example.com/my-image:dev'
+	Creates an Deployments named "my-app" that creates pod that are besed on a specific image
 	
-	'oc set env deployment/my-app TEAM=red' -> "deployment.apps/my-app updated"
-	Using the set options to define attributes on a resouce like environmental variables, like "TEAM=red"
-	environmental variable in a existing deployment.
-
-You can also use the 'run' option to create a resouce using the imperative approach
-
-	'Example of using the 'run' option the imperative way to create the "example-pod"
-	'oc run example-pod \ #1
-	--image=registry.access.redhat.com/ubi8/httpd-24 \ #2
-	--env GREETING="Hello from the awesome container" \ #3
-	--port 8080' #4
+	'oc set env deployment/my-app TEAM=red'
+	Use the 'set' option to define attributes on a resouces like environmental variables. In this
+	case add the enciron,etal variable "TEAM=red# to a existing deployment named "my-app"
 	
-	Explanation for the secret definition
+	Example using the 'run' option also an imperative approach to creating a resource
 	-----
-	#1: The pod .metadata.name definition
+	'oc run example-pod \ #1
+	 --image=registry.access.redhat.com/ubi8/httpd-24 \ #2
+	 --env GREETING='Hello from the awesome container' \ #3
+	 --port 8080' #4
+ 
+ 	Explain the usage of 'run' option
+ 	-----
+ 	#1: The pod .metadata.name definition
 	#2: The image for the single container in this pod
 	#3: The environment variable for the single container in this pod
 	#4: The port metadata definition
 
-The imperative way commands are faster way of creating pods becase no pod object definition is required.
-Versioning and incremental changes require declarative manifests.
+The imperative way is a faster way of creating resources because som definition are not needed. Adding
+versioning and incremental changes require declarative manifests.
 
-Generally developers test a deployemnt by using imperative commands and use them to generate the pod
-definitions. Using the "--dry-run=client" flag to avoid the object being created in OpenShift. Also using
-the output (Yaml or JSON) to define a definition format.
+Normally you test the deployment by doing it the imperative commands. You can use the imperative way
+to deploy an applicaion to test it, adding the flag "--dry-run=client" avoids the creation of the object,
+by adding the output flag, "-o yaml" or "-o json", with a format output
 
-	Example of a create a Yaml definition using output from a imperative command
-	-----
 	'oc run example-pod \
-	--image=registry.access.redhat.com/ubi8/httpd-24 \
-	--env GREETING='Hello from the awesome container' \
-	--port 8080 \
-	--dry-run=client -o yaml' -> example-pod.yaml
-	
-	example-pod.yaml
-	-----
+	 --image=registry.access.redhat.com/ubi8/httpd-24 \
+	 --env GREETING='Hello from the awesome container' \
+	 --port 8080 \
+	 --dry-run=client -o yaml' ->
+	 
 	apiVersion: v1
 	kind: Pod
 	metadata:
@@ -408,8 +400,8 @@ the output (Yaml or JSON) to define a definition format.
 	spec:
 	  containers:
 	...
-
-	Creating the definition is imperative but then using the definion is declarative
+	
+	Generate a Yaml manifest file using the imperative way.
 
 
 #### Declarative Resource Management

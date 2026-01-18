@@ -83,6 +83,7 @@ If a pod that is managed by a Deployment fails, then the controller automaticall
 to replace it, which is a core HA mechanism. These controllers require the pod template's restartPolicy
 field to be set to Always.
 
+---
 
 ## Application Health Probes
 
@@ -229,13 +230,13 @@ NOTE!
 The 'oc set probe ...' command is exclusive to RHOCP and oc.
 
 
-
 ### Adding Probes via the Web Console
 
 Add, modify a probe on a deployment is done in the web console, go to "Workloads -> Deployment" menu
 and select a deployment. Click "Actions", click "Add Health Checks", click "Edit probe" to specify the
 readuness type, HTTP header, path, port and more.
 
+---
 
 ## RESERVING COMPUTE CAPACITY FOR APPLICATIONS
 
@@ -563,6 +564,7 @@ To visualize the consumption of resources from the web console, select a deploym
 "Metrics" tab. From this tab, you can view the usage for memory, CPU, the file system, and incoming
 and outgoing traffic.
 
+---
 
 ## APPLICATION AUTOSCALING
 
@@ -572,32 +574,200 @@ Kubernetes can autoscale a deployment based on the current load on the applicati
 
 ### Horizontal Pod Autoscaling
 
+In production the applicaion load can very much and manually scalling the applicaion to fit is inefficient
+and prone to error. OpenShift provides an automataed solution for this by using the Horizontal Pod Autoscaler
+(HPA) it automatically scales the pods in a replicaion controller, deployment, replica set or stateful
+set based on observed metrics such as CPU utilization.
+
+Effective autoscaling is critical for several reasons
+
+- High Availability and Performance  
+	By automatically adding pods during traffic spikes, the HPA ensures that the application remains
+	responsive and meets its service-level objectives.
+
+- Cost Optimization  
+	During periods of low traffic, the HPA scales down the number of pods. Removing the extra pods releases
+	unused resources back to the cluster, to enable other workloads to use them and to optimize overall
+	resource usage.
+
+- Operational Efficiency  
+	Automating the scaling process removes the need for manual intervention by operations teams. The
+	automation reduces the risk of human error and enables engineers to focus on other tasks.
 
 
 ### The Autoscaling Process in Kubernetes
 
+The HPA is a control loop that runs inside Kubernetes control manager. The *HorizontalPodAutoscaler*
+resource uses metrics that the monitoring stack collects, it is preinstalled in OpenShift. The control
+manager check the HPA resource every 15 seconds, during each check (loop) it does the following
+
+- The autoscaler retrieves the target metric for scaling from the HPA resource definition.
+- For each pod that the HPA resource targets, the autoscaler collects the current value of the metric
+	from the metrics server.
+- For each targeted pod, the autoscaler computes the usage percentage, based on the collected metric
+	and the resource requests that are defined in the pod specification.
+- The autoscaler computes the average usage across all the targeted pods.
+- It establishes a ratio between the target metric value and the current average metric value.
+- The autoscaler uses this ratio to make a scaling decision, either to increase or to decrease the number
+	of replicas for the target resource.
 
 
 ### Prerequisites for Autoscaling
 
+Autoscaling a deployment requires that the resource request is specified for containers in the pods.
+These resource requests values are used to calculate the usage by the HPA. The autoscaler requires resource
+requests to calculate utilization and to perform scaling actions.
 
+IMPORTANT!  
+Pods that are created by using the oc create deployment command do not define resource requests by
+default. Using the RHOCP autoscaler might therefore require editing the deployment resources to add
+requests. Alternatively, you can create custom YAML resource files for your application. You can also
+add to your project a LimitRange resource, which defines default resource requests for pods.
 
 
 ### Creating a Horizontal Pod Autoscaler
 
+You can create an HPA resource by using the command line, a YAML manifest, or the web console.
+
 
 #### Using the 'oc autoscale' Command
+
+To create a *HorizontalPodAutoscaler* resource from the command line, use the oc autoscale command:
+
+	'oc autoscale deployment/hello --min 1 --max 10 --cpu-percent 80'
+	Creates a HPA for the "hello" deployment. A pod count between 1-10 replicas. It will scale the
+	deployment to keep the average CPU usage of the pods at or below 80%.
+
+The max and min values for a horizontal pod autoscaler resource takes into considiration burst to avoid
+overloading the OpenShift cluster. If the load of the applicaion changes to quickly it helps keeping some
+spare pods online to help with the requests. But at the same time to many pods can use up all of the
+clusters capcity and interfear with other applicaion in the cluster.
 
 
 #### Using a YAML Manifest
 
+For advanced configurations you can define a HPA resource in a manifest file.
+
+An example of creating an HPA resource that scales based on CPU usage. 
+
+	Example of a HPA resource Yaml file, scale by CPU unage
+	-----
+	apiVersion: autoscaling/v2
+	kind: HorizontalPodAutoscaler
+	metadata:
+	  name: hello
+	spec:
+	  minReplicas: 1   #1
+	  maxReplicas: 10  #2
+	  metrics: #3
+	  - resource:
+		  name: cpu
+		  target:
+		    averageUtilization: 80  #4
+		    type: Utilization
+		type: Resource
+	  scaleTargetRef:  #5
+		apiVersion: apps/v1
+		kind: Deployment
+		name: hello
+	
+	Explain the HPA manifest
+	-----
+	#1: The minReplicas field specifies the minimum number of pods.
+	#2: The maxReplicas field specifies the maximum number of pods.
+	#3: The metrics array defines the metrics to use for scaling decisions.
+	#4: The averageUtilization field specifies the target average CPU utilization for each pod,
+		and is represented as a percentage. If the global average CPU usage is above that value,
+		then the horizontal pod autoscaler starts new pods. If the global average CPU usage is
+		below that value, then the horizontal pod autoscaler deletes pods.
+	#5: The scaleTargetRef field points to the resource that the HPA manages.
+	
+	'oc apply -f hello-hpa.yaml'
+	Use the oc apply command to create the resource from the file.
+
+Alternatively, it can scale based on memory usage by setting the resource name to memory.
+
+	Example of a HPA resource Yaml file, scale by memory unage
+	-----
+	apiVersion: autoscaling/v2
+	kind: HorizontalPodAutoscaler
+	metadata:
+	  name: hello
+	spec:
+	  minReplicas: 1
+	  maxReplicas: 10
+	  metrics:
+	  - resource:
+		  name: memory #1
+		  target:
+		    averageUtilization: 80
+	...
+	
+	Explain the HPA manifest
+	-----
+	#1: The resource name is set to memory to trigger scaling based on memory utilization.
+
+NOTE!
+Memory-based autoscaling is not suitable for all applications. For example, applications that are
+based on the Java Virtual Machine (JVM) often claim large memory at startup and do not release it.
+If an application's memory usage does not correlate with its load, then memory-based autoscaling
+might not be effective.
+
 
 #### Using the Web Console
+
+As the deleveroper in the web console select a project and click "Topology" menu, click the deployment
+for the applicaion to display the details. Select "Action -> Add HorizontalPodAutoscaler", use the Add
+Horizontal Pod Autoscaler form or YAML view to set the HPA parameters.
 
 
 ### Verifying Horizontal Pod Autoscaler Status
 
+You can moitor the staus of the HPA object after it has been created.
+
 
 #### Viewing HPA Objects
 
+Use *'oc get hpa'* to get information about the HPA resource in the current project
+
+	'oc get hpa' ->
+		NAME    REFERENCE          TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+		hello   Deployment/hello   <unknown>/80%   1         10        1          30s
+
+At start the HPA has the value _unknown_ in the *TARGETS* column, it might tak up to five minutes to
+display the current usage. If the value _unknown_ persist it might indicate that the target deployment
+does not define resource request for the specified target. The HPA only scales with resource requests.
+
+
 #### Inspecting HPA Details and Events
+
+Use *'oc describe hpa ..."* for detailed informaion. It will show the HPA configuration, metrics and
+a log of recent scaling events.
+
+	'oc describe hpa hello' ->
+		...
+		Events:
+		  Type    Reason             Age    From                       Message
+		  ----    ------             ----   ----                       -------
+		  Normal  SuccessfulRescale  16m    horizontal-pod-autoscaler  New size: 2; ...
+		  Normal  SuccessfulRescale  14m    horizontal-pod-autoscaler  New size: 4; ...
+		  Normal  SuccessfulRescale  14m    horizontal-pod-autoscaler  New size: 8; ...
+		  ...
+
+The event section is usefule for troubleshooting since it provides a record of when and why the HPA
+scaled up or down th target resource.
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
