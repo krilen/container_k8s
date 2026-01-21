@@ -759,6 +759,411 @@ scaled up or down th target resource.
 
 ---
 
+## CONTAINER IMAGE IDENTITY AND TAGS
+
+### Kubernetes Image Tags
+
+A container image name cinsist of several parts. The image "registry.redhat.io/rhel9/nginx-124:9.6"
+consists of four parts
+
+- The registry: "registry.redhat.io"
+- Namespace: "rhel9"
+- Name of the image: "nginx-124", in this case if also reference a version ot the nginx used, "1.24"
+- The tag that tells the specific version ogf this image, "9.6". If you leave out the tag the default
+	tag "latest" is used.
+
+Mutiple tags can point or refer to the same image. 
+
+Red Hat Ecosystem Catalog at https://catalog.redhat.com/software/containers/explore
+
+When multiple tag exists on an image some of the tags are *floating tags*. A *floating tag* is something
+that changes over time, the tag "latest" is one of those tas, when a new image version is created it
+will get the tag "latest". Another *floating tag* that sometimes are used is "1".
+
+If you specify a floating tag you ensure that you always use an up-to-date image version.
+
+
+#### Floating Tag Issues
+
+Anyone that publishes images establish their own lifecycle for *floating tags*. The reassign *floating
+tags* without notice.
+
+Using images you may not notice that a tag have been reassign to an new image version.
+
+As an example suppose you deploy an image with the "latest" tag, this is what could happen.
+
+1. When OpenShift deploys the container it pulls the image with the latest tag from the container registry.
+1. Later the the image developer creates a updated image and assigns the "latest" tag to it.
+1. Openshift realocates the pod to a different node as it fails or the replica scales up the number
+	of pods
+1. On the new node OpenShift pulls the image with the "latest" tag, that actually is a updated version
+	of the applicaion.
+1. Now the deployment might run a newer version that you are not aware of or even worse different versions
+	since the replica scaled up.
+
+Is is not good that you run a newer version of the applicaion (container image) that you are not aware of. 
+But it is a disater if you run to different version of the applicaion in the cluster. 
+
+To prevent this issue from happening select an image that will not change over time.
+
+Select an static image can be done in several ways.
+
+- Use a tag that does not change, instead of relying on floating tags.
+- Use OpenShift image streams for tight control over the image versions.
+- Use the Secure Hash Algorithm (SHA) image ID instead of a tag when referencing an image version.
+
+Distinction between floating and non-floating tags is not technical but convension. A developer should
+not, but can, push an image to an existing tag. To guarantee that the refrenced image does not change
+you must specify the SHA image ID. 
+
+
+#### Using an SHA Image ID
+
+SHA image ID also knwon as Digest
+
+Developers assigns tags to images while a SHA image ID, or disest, is a unique identifier that the container
+registry computes and assigns to images. The SHA image ID is immutable string that refers to a specific
+image version. THis is the most secure approch of identifying an image.
+
+To refer to an image by id SHA ID replace *name:tag* with *name@SHA-ID*.
+Example: "registry.redhat.io/rhel9/nginx-124@sha256:126903359331eb9f2c87950f952442..."
+
+use the 'oc image info ...' command to get the SHA image ID.
+
+	NOTE!
+	A multi-architecture image references images for several CPU architectures. Multi-architecture
+	images include an index that points to the images for different platforms and CPU architectures.
+	
+	For these images, the oc image info command requires you to select an architecture by using
+	the "--filter-by-os option":
+	
+	'oc image info registry.redhat.io/rhel9/nginx-124:9.6' ->
+		error: the image is a manifest list and contains multiple images - use --filter-by-os to select from:
+		
+		  OS               DIGEST
+		  linux/amd64      sha256:c83789b0c7765e172bee5d36948e63e5db43248d8a3d69a3bb1...
+		  linux/arm64/v8   sha256:dd239a25567a7b3887848b927bf9376fc76c4c4a57290afee55...
+		  linux/ppc64le    sha256:0e9df5ef304708e1244697dc127816f07ece420bc47ea388cf1...
+		  linux/s390x      sha256:0dd7ddd965e11c8a70fbcc66499b72de4e508afb0e4dfca48e8...
+
+Two ways of displaying the SHA ID
+
+- 'oc image info ...' way
+
+		Example of displaying the SHA ID for the image thath the "9.6" tag points to
+		-----
+		'oc image info --filter-by-os linux/amd64 registry.redhat.io/rhel9/nginx-124:9.6' ->
+			Name:      registry.redhat.io/rhel9/nginx-124:9.6
+			Digest:    sha256:c83789b0c7765e172bee5d36948e63e5db43248d8a3d69a3bb1... #1
+			Manifest List: sha256:126903359331eb9f2c87950f952442db456750190956b9301d0...
+			Media Type:    application/vnd.oci.image.manifest.v1+json
+			...
+		
+		Explaination for the display
+		-----
+		#1: The SHA image ID, or digest, for the specified image tag and architecture.
+
+- You can also use the 'skopeo inspect ...' command, the output will differ but contain the same info
+
+		'skopeo inspect docker://docker.io/nginx:stable-alpine3.23-perl' ->
+			{
+				"Name": "docker.io/library/nginx",
+				"Digest": "sha256:16c58a4b4a299bd3a078c73f31d4b692c7b07010fc56e38f4dff06d5ae4d41c6",
+				"RepoTags": [
+					"1",
+					"1-alpine",
+					...
+
+When you use the 'oc debug node/node-name' to connect to a node you can list the locally availbe images
+by running 'crictl images --digests --no-trunc' command. The "--digest" flag will provide you with
+the Digest in the response and "--no-trunc" flag will make sure that the whole SHA ID is displayed
+and not a few characters.
+
+	'oc debug node/node-name' ->
+		Temporary namespace openshift-debug-csn2p is created for debugging node...
+		Starting pod/node-name-debug ...
+		To use host binaries, run `chroot /host`
+		Pod IP: 192.168.50.10
+		If you don't see a command prompt, try pressing enter.
+
+		sh-4.4# chroot /host
+		sh-4.4# crictl images --digests --no-trunc registry.redhat.io/rhel9/nginx-124:9.6
+			IMAGE                                TAG   DIGEST               IMAGE ID    ...
+			registry.redhat.io/rhel9/nginx-124:  9.6   sha256:c837...71de   2e68...949e ...
+
+	The IMAGE ID column displays the local image identifier that the container engine assigns to
+	the image. This identifier is not related to the SHA ID.
+
+The container image format felies on SHA-256 hashes to identify severla images components, image layers,
+image metadata, ... Command might contain SHA-256 strings you need to ensure that the SJA-356 hash
+corresponds to the SHA imgae ID.
+
+
+### Selecting a Pull Policy
+
+Deploying an image, OpenShift selects a node to run the pod. On the node OpenShift first needs to pull
+the image then start the container.
+
+Setting *imagePullPolicy* attribute in the deployment resourceyou are able to control how OpenShift
+pulls the image.
+
+	Example shows the deployment resource
+	-----
+	'oc get deployment myapp -o yaml' -> 
+		apiVersion: apps/v1
+		kind: Deployment
+		...
+		  template:
+			metadata:
+			  creationTimestamp: null
+			  labels:
+				app: myapp
+			spec:
+			  containers:
+			  - image: registry.redhat.io/rhel9/nginx-124:9.6
+				imagePullPolicy: IfNotPresent #1
+				name: nginx-124
+		...
+	
+	Explain the imagePullPolicy
+	-----
+	#1: The image pull policy is set to IfNotPresent.
+
+The *imagePullPolicy* attribute can have the following values
+
+- IfNotPresent  
+	If the image is present locally on the compute node it will be used else Openshift will pull it
+	from the registry.
+	
+	If a floating tag was used as an container image and that image tag is present locally on the
+	compute node it will be used. Even if the floating tag might have been pointed to a newer image.
+	If the floating tag is not present locally it will be pulled to the compute node.
+	
+	By default OpenShift sets the *imagePullPolicy* to *IfNotPresent* when you use a tag or SHA ID
+	to identify the image.
+
+- Always  
+	OpenShift verifies if an updated version of the image is availble in the registry. It compairs
+	the remote SHA ID in the remote registry to the SHA ID of the local SHA ID of the image if the
+	image is present. If the two ids are the same it uses the local image otherwise it pulls the image.
+	
+	If using a floating tag OpenShift compairs the remote registry image SHA ID to the local image
+	SHA ID, if a new version of the image exists and the floating tag have been updated OpenShift
+	will pull the remote image.
+
+	OpenShift sets the *imagePullPolicy* to *Always* by default if you use the "latest" tag or when
+	you do not specify a tag.
+
+- Never  
+	Open Shift does not pull the image, it expects that the image to be present locally on the node.
+	Otherwise the deployment will fail.
+	
+	When using the pulll policy you must premair the compute nodes with the images that you want to
+	use. This policy is used to improve speed and vaid relaying on the registry for those images.
+
+
+### Pruning Images from Cluster Nodes
+
+An container image is not removed automatically since OpenShift can reuse an container image instead
+of pulling them every time a pod is deployed.
+
+Because of this container images comsume disk on the compute nodes. OpenShift needs to remove or 
+prune unused images to reclaim diskspace. The *kubelet* process that runs the compute nodes includes
+a garbage collection that runs every 5 min. When the space on the file system that stores the images
+is above 85% then the garbage collector removed the oldest unused images. The garbage collection
+stops when the file system usage drops below 80%.
+
+The thresholds can be adjusted.
+
+From a compute node you can run *'crictl imagefsinfo'* to retrive the name of the file system thatstores the images. 
+
+	'oc debug node/master01' ->
+		Temporary namespace openshift-debug-csn2p is created for debugging node...
+		Starting pod/node-name-debug ...
+		To use host binaries, run `chroot /host`
+		Pod IP: 192.168.50.10
+		If you don't see a command prompt, try pressing enter.
+
+		sh-4.4# chroot /host
+		sh-4.4# crictl imagefsinfo
+			{
+			  "status": {
+				"timestamp": "1674465624446958511",
+				"fsId": {
+				  "mountpoint": "/var/lib/containers/storage/overlay-images"
+				},
+				"usedBytes": {
+				  "value": "1318560"
+				},
+				"inodesUsed": {
+				  "value": "446"
+				}
+			  }
+			}
+	
+	NOTE!
+	The oc debug node and crictl commands require cluster administrator privileges.
+
+	Explaination to the above output
+	-----
+	The file system that stores the images is "/var/lib/containers/storage/overlay-images", it consumes
+	1318560 bytes of disk.
+
+On a compute node you can use 'crictl rmi' command to remove an unused image. But using the 'crictl'
+command might interfear with the garbage collecor and the kubectl process.
+
+It is recommended to rely on the garbage collector to prune unused objects, images and container on
+the compute nodes. The garbage collector is configured to better fulfill any custom needs. The garbage
+collector thresholds are configurable via the KubeletConfig Custom Resource (CR).
+
+---
+
+## UPDATE APPLICATION IMAGE AND SETTINGS
+
+### Application Code, Configuration, and Data
+
+A modern applicaion consists of code, configuration and data. Both the configuration and data are not
+hardcoded as part of the software. The software loads both the configuration and data from external
+sources. This allows the same software to be used in different environments without the the need to
+change the code in the software.
+
+OpenShift provides configuration map, secrets and volumes resources to store the applications configuration
+and data. The code of the application is available in the container image.
+
+Openshift deploys the container image as the application and a new version of the image must be built
+when the code gets updated for the applicaion. Some use a CI/CD pipeline to automatically build an image
+form the applicaion source code. The build image gets pushed to a registry.
+
+You use OpenShift resources, configuraion maps and secrets to update the applicaions configuration.
+To control the deployment process of a new Image version, use a *Deployment* object.
+
+
+### Deployment Strategies
+
+With CI/CD pipeline deploying application changes or new versions are a big part.
+
+An application change can carry a risk, downtime during deployment, bugs or reduced performence.
+Risks can be reduce or mitigate some risk with testing and validation stages in pipelines.
+
+Downtime can result in lost business, sla breatches or distrupt other service that depend on your
+appliaction.
+
+In OpenShift you can use a Deployment objects is used to define aDeployment and deployment strategies.
+The main OpenShift strategies are *RollingUpdate* and *Recreate*.
+
+In the Deployment object the Update stategies are set in ".spec.strategy.type"
+
+	Example of a Recreate Deployment strategy
+	-----
+	apiVersion: apps/v1
+	kind: Deployment
+	metadata:
+	...
+	spec:
+	  progressDeadlineSeconds: 600
+	  replicas: 10
+	  revisionHistoryLimit: 10
+	  selector:
+		matchLabels:
+		  app: myapp2
+	  strategy:
+		type: Recreate
+	  template:
+	...
+
+
+#### Rolling Update Strategy
+
+The *RollingUpdate* replaces one instance after anothor until all instances have been replaced. This
+means that both version of the applicaion runs at the same time, when the new version of the applicaion
+is ready the old version of the applicaion is scaled down. The problem with this strategy is that the
+version of the applicaion needs to be compatible in the deployment.
+
+Graphic showing an applicaion using rolling update.
+
+![From REDHAT Academy](openshift/rolling-strategy.svg)
+
+1. Some application instances run a code version that needs updating (v1). OpenShift scales up a new
+	instance with the updated application version (v2). Because the new instance with version v2 is
+	not ready, only the version v1 instances fulfill customer requests.
+
+1. The instance with v2 is ready and accepts customer requests. OpenShift scales down an instance
+	with version v1, and scales up a new instance with version v2. Both versions of the application
+	fulfill customer requests.
+
+1. The new instance with v2 is ready and accepts customer requests. OpenShift scales down the remaining
+	instance with version v1.
+
+1. No instances remain to replace. The application update was successful and without downtime.
+
+The RollingUpdate strategy support continuous development and eliminates downtime for the applicaion
+during development. This strategy work only if different version of the applicaion can run at the
+same time.
+
+The RollingUpdate strategy is the default update strategy if not strategy has been defined.
+
+	Example of a deployment manifest using RollingUpdate strategy
+	----- 
+	apiVersion: apps/v1
+	kind: Deployment
+	metadata:
+	...
+	spec:
+	  progressDeadlineSeconds: 600
+	  replicas: 10
+	  revisionHistoryLimit: 10
+	  selector:
+		matchLabels:
+		  app: myapp2
+	  strategy:
+		rollingUpdate:
+		  maxSurge: 25%
+		  maxUnavailable: 1
+		type: RollingUpdate
+	  template:
+	...
+
+With the rolling update configuratio nare  two parameters that you need to know, *maxSurge* and *maxUnavailable*.
+
+During an rolling update the numebr of pods vary because OpenShift starts new version pods before the
+older version is removed. The *maxSurge* parameter tells how many pods OpenShift can create above the
+normal amount of replicas. The *maxUnavailable* parameter tells how many pods can be removed below the
+normal amount of replicas. These number can either be set in % (25%) or number (1).
+
+If a readinness probe is configured for the deployment then during a rolling update OpenShift will start
+sending traffic to the new pods as soon as they are running. This can cause issues since the container
+inside the updated pod might now be ready for request and therefor can not respond and the request will
+fail.
+
+By adding a readiness probe to the deployment prevents OpenShift from sending traffic to new pods
+that are not ready.
+
+
+#### Recreate Strategy
+
+I am here!!!!!
+
+
+
+
+
+### Rolling out Applications
+
+#### Monitoring Replica Sets
+
+#### Managing Rollout
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
