@@ -873,6 +873,9 @@ Two ways of displaying the SHA ID
 					"1",
 					"1-alpine",
 					...
+				]
+				...
+			}
 
 When you use the 'oc debug node/node-name' to connect to a node you can list the locally availbe images
 by running 'crictl images --digests --no-trunc' command. The "--digest" flag will provide you with
@@ -1079,7 +1082,7 @@ means that both version of the applicaion runs at the same time, when the new ve
 is ready the old version of the applicaion is scaled down. The problem with this strategy is that the
 version of the applicaion needs to be compatible in the deployment.
 
-Graphic showing an applicaion using rolling update.
+Graphic showing an application using rolling update.
 
 ![From REDHAT Academy](openshift/rolling-strategy.svg)
 
@@ -1130,7 +1133,7 @@ older version is removed. The *maxSurge* parameter tells how many pods OpenShift
 normal amount of replicas. The *maxUnavailable* parameter tells how many pods can be removed below the
 normal amount of replicas. These number can either be set in % (25%) or number (1).
 
-If a readinness probe is configured for the deployment then during a rolling update OpenShift will start
+If a readiness probe is configured for the deployment then during a rolling update OpenShift will start
 sending traffic to the new pods as soon as they are running. This can cause issues since the container
 inside the updated pod might now be ready for request and therefor can not respond and the request will
 fail.
@@ -1141,37 +1144,242 @@ that are not ready.
 
 #### Recreate Strategy
 
-I am here!!!!!
+Using this strategy all instances of the applicaion is first stopped then replaced with new ones. The drawback of
+this strategy is that it will cause downtime during a period not request will be fulfilled.
 
+Graphic showing an application using recreate.
 
+![From REDHAT Academy](openshift/recreate-strategy.svg)
 
+1. The application has some instances that run a code version to update (v1).
+
+1. OpenShift scales down the running instances to zero. Scaling down to zero causes application downtime, because
+	no instances are available to fulfill requests.
+
+1. OpenShift scales up new instances with a new version of the application (v2). When the new instances are booting,
+	the downtime continues.
+
+1. Starting the new instances resolves the application outage and completes the Recreate strategy.
+
+This strategy is not recommended for applications that need high availability. You can use this strategy when the
+application cannot have different version running at the same time. Also use this strategy to execute data migrations
+or data transformations before the new version (applicaion / code) starts.
 
 
 ### Rolling out Applications
 
+When the deployment is updated OpenShift automatically rools put the application. If multiple modifications are done
+in a row, image update, environment variables, readiness probe then OpenShift will roll out the application for each
+modification.
+
+To prevent a multiple deployment update, pause the rollout, apply the modifications to the deployment object and
+then resume the rollout. OpenShift will then perform a single rollout to apply all the modifications.
+
+	'oc rollout pause deployment/myapp'
+	Pause the rollout for the deplyment "myapp"
+	
+	'oc set image deployment/myapp nginx-120=registry.access.redhat.com/ubi9/nginx-120:1-86'
+	'oc set env deployment/myapp NGINX_LOG_TO_VOLUME=1'
+	'oc set probe deployment/myapp --readiness --get-url http://:8080'
+	Apply the modifications
+	
+	'oc rollout resume deployment/myapp'
+	Resume the rollout.
+	
+	OpenShift will rollout the application and apply all modification to the deployment object.
+
+A simulare process can be done when you create and configure a new deployment
+
+	'oc create deployment myapp2 --image registry.access.redhat.com/ubi9/nginx-120:1-86 --replicas 0'
+	Create the deployment but set the number of replicas to 0
+	
+	'oc get deployment/myapp2' ->
+		NAME     READY   UP-TO-DATE   AVAILABLE   AGE
+		myapp2   0/0     0            0           9s
+		
+	Confirm that no running pods
+
+	'oc set probe deployment/myapp2 --readiness --get-url http://:8080'
+	Apply a modification in this case a readiness probe
+	
+	'oc scale deployment/myapp2 --replicas 10'
+	Scale up the deployment och OpenShift will rollout the applicaion and its pods.
+	
+	'oc get deployment/myapp2' ->
+		NAME     READY   UP-TO-DATE   AVAILABLE   AGE
+		myapp2   10/10   10           10          18s
+	
+	Confirm that the pods are now running
+	
+	
 #### Monitoring Replica Sets
+
+When OpenShift rolls out an application from the Deployment object it creates a ReplicaSet object.
+A Replicaset are sresponsible for creating and monitoring the pods. If a pod fails then the replicaset
+object deploys a new one.
+
+Replica set used the pod definition in the deployment object to deploy pods. OpenShift copies the
+template definition from the deployment object when it creates the replicaset object.
+
+When the deployment object is updated it does not update the replicaset object nut instead creates a
+new replicaset object with the new pod template definition. After that OpenShift rolls out the pods
+with the applicaition accorinf to the choosen strategy.
+
+Multiple replicaset can exists at the same time for a deployment. During a rollout the earlier and
+the new replicaset object coexists and manages the rollpout of the new version. After the rollout
+the ealier replicaset object is keep in case you need to do a roll back of the new version.
+
+Graphic showing the deployment object and two replicaset objects. The ealier replicaset object for
+version 1 that runs no any pods. And the current replicaset that has version 2 of the applicaion
+and has 3 pods.
+
+![From REDHAT Academy](openshift/replicaset.svg)
+
+Never change or delete the replicaset object since is is managed through the deployment object. The
+".spec.revisionHistoryLimit" attribute in the deplyment objects specifies how many replicaset object
+OpenShift keeps. When the deployment object is deleted OpenShift deleters all associated replicaset
+objects.
+
+	'oc get replicaset' ->
+		NAME                DESIRED   CURRENT   READY   AGE
+		myapp2-574968dd59   0         0         0       3m27s
+		myapp2-76679885b9   10        10        10      22s
+		myapp2-786cbf9bc8   0         0         0       114s
+
+	Get the current list of replicaset objects. The deployment name is used as a prefix for the
+	replica set.
+	
+	The above shows 3 replicasets objects for the deployment "myapp2". When the "myapp2" deployment is
+	modified OpenShift creates a replicaset object. In the list above the second row is the active and
+	monitors 10 pods. The other replicaset do not manage any pods.
+	
+	Example of replicaset during a rollout
+	-----
+	'oc get replicaset' ->
+		NAME                DESIRED   CURRENT   READY   AGE
+		myapp2-574968dd59   0         0         0       13m
+		myapp2-5fb5766df5   4         4         2       21s  #1
+		myapp2-76679885b9   8         8         8       10m  #2
+		myapp2-786cbf9bc8   0         0         0       11m
+
+	Explaination of the replicaset during a rollout
+	-----
+	#1: The new ReplicaSet object already started four pods, but the READY column shows that the
+		readiness probe succeeded for only two pods so far. These two pods are likely to receive
+		client traffic.
+	#2: The ReplicaSet object already scaled down from 10 to 8 pods.
+
 
 #### Managing Rollout
 
+OpenShift preserves the older replicaset objects from ealier deployments. These are used when the need
+of doing a roll back if the new application does not work.
+
+Using the 'oc rollout undo command ...' to rollback to a previous deployment version.
+
+	'oc rollout undo deployment/myapp2'
+	Doing a rollback to a previous version (older replicaset)
+	
+	'oc rollout status deployment/myapp2' -> "deployment 'myapp2' successfully rolled out"
+	Seeing the status of the rollout.
+	
+If a rollout operation fail for some reason, wrong contgainer image, readiness probe fails, ... OpenShift
+does not automatically roll back the deployment, ig must be commanded to to so, 'oc rollout undo ...'
+
+By default the 'oc rollback undo ...' command rolls back to the previous version. To roll back even
+further you can specify an avaible version.
+
+	'oc rollout history deployment/myapp2' ->
+		deployment.apps/myapp2
+		REVISION  CHANGE-CAUSE
+		1         <none>
+		3         <none>
+		4         <none>
+		5         <none>
+
+	See the rollout history and it list of previous version
+	
+	NOTE!
+	The CHANGE-CAUSE column provides a user-defined message that describes the revision. You can
+	store the message in the kubernetes.io/change-cause deployment annotation after every rollout.
+
+	'oc annotate deployment/myapp2 kubernetes.io/change-cause="Image updated to 1-86"'
+	Add a annotation ´to the "change-cause"
+	
+	'oc rollout history deployment/myapp2' ->
+		deployment.apps/myapp2
+		REVISION  CHANGE-CAUSE
+		1         <none>
+		3         <none>
+		4         <none>
+		5         Image updated to 1-86
+
+	After adding the annotation you are able to see it in the rollout history
+	
+	'oc rollout history deployment/myapp2 --revision 1' ->
+		deployment.apps/myapp2 with revision #1
+		Pod Template:
+		  Labels: app=myapp2
+				  pod-template-hash=574968dd59
+		  Containers:
+		   nginx-120:
+			Image:       registry.access.redhat.com/ubi9/nginx-120:1-86
+			Port:        <none>
+			Host Port:   <none>
+			Environment: <none>
+			Mounts:      <none>
+		  Volumes: <none>
+
+	Using the "--revision" flagg with the revision number you are to get more details about the
+	specific revision.
+	
+	The "pod-template-hash" attribute is the suffix of associated replicaset object. For example, you
+	can inspect the ReplicaSet object for more details by using the 'oc describe replicaset myapp2-574968dd59'
+	command.
+	
+	'oc rollout undo deployment/myapp2 --to-revision 1'
+	Doing a rollback to a specific revision using 'oc rollback undo ... --torevision ...'
+	
+Remeber if you are using floating tags as refrences for the deployment and for the container pod.
+The floating tag might have been change and doing a rollback the older deploymnet might might use a
+different image. As a result the rollbak might not be to the previous image but another one.
+
+To prevent this issue, use the OpenShift image streams for referencing images instead of floating tags. 
+
+---
+
+## REPRODUCIBLE DEPLOYMENTS WITH OPENSHIFT IMAGE STREAMS
+
+I'm here
+
+### Image Streams
+
+#### Image Stream Tags
 
 
+#### Image Names, Tags, and IDs
 
 
+#### Image Stream Use Cases
 
 
+### Creating Image Streams and Tags
 
 
+#### Inspecting an Image Stream Definition
+
+#### Importing Image Stream Tags Periodically
 
 
+#### Configuring Image Pull-through
 
 
+### Using Image Streams in Deployments
 
 
+#### Enabling the Local Lookup Policy
 
-
-
-
-
+#### Configuring Image Streams in Deployments
 
 
 
