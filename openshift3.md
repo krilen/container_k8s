@@ -615,8 +615,8 @@ manager check the HPA resource every 15 seconds, during each check (loop) it doe
 ### Prerequisites for Autoscaling
 
 Autoscaling a deployment requires that the resource request is specified for containers in the pods.
-These resource requests values are used to calculate the usage by the HPA. The autoscaler requires resource
-requests to calculate utilization and to perform scaling actions.
+These resource requests values are used to calculate the usage by the HPA. The autoscaler requires
+resource requests to calculate utilization and to perform scaling actions.
 
 IMPORTANT!  
 Pods that are created by using the oc create deployment command do not define resource requests by
@@ -801,8 +801,8 @@ As an example suppose you deploy an image with the "latest" tag, this is what co
 1. Now the deployment might run a newer version that you are not aware of or even worse different versions
 	since the replica scaled up.
 
-Is is not good that you run a newer version of the applicaion (container image) that you are not aware of. 
-But it is a disater if you run to different version of the applicaion in the cluster. 
+Is is not good that you run a newer version of the applicaion (container image) that you are not aware
+of. But it is a disater if you run to different version of the applicaion in the cluster. 
 
 To prevent this issue from happening select an image that will not change over time.
 
@@ -978,7 +978,8 @@ stops when the file system usage drops below 80%.
 
 The thresholds can be adjusted.
 
-From a compute node you can run *'crictl imagefsinfo'* to retrive the name of the file system thatstores the images. 
+From a compute node you can run *'crictl imagefsinfo'* to retrive the name of the file system thatstores
+the images. 
 
 	'oc debug node/master01' ->
 		Temporary namespace openshift-debug-csn2p is created for debugging node...
@@ -1144,8 +1145,8 @@ that are not ready.
 
 #### Recreate Strategy
 
-Using this strategy all instances of the applicaion is first stopped then replaced with new ones. The drawback of
-this strategy is that it will cause downtime during a period not request will be fulfilled.
+Using this strategy all instances of the applicaion is first stopped then replaced with new ones. The
+drawback of this strategy is that it will cause downtime during a period not request will be fulfilled.
 
 Graphic showing an application using recreate.
 
@@ -1153,17 +1154,17 @@ Graphic showing an application using recreate.
 
 1. The application has some instances that run a code version to update (v1).
 
-1. OpenShift scales down the running instances to zero. Scaling down to zero causes application downtime, because
-	no instances are available to fulfill requests.
+1. OpenShift scales down the running instances to zero. Scaling down to zero causes application downtime,
+	because no instances are available to fulfill requests.
 
-1. OpenShift scales up new instances with a new version of the application (v2). When the new instances are booting,
-	the downtime continues.
+1. OpenShift scales up new instances with a new version of the application (v2). When the new instances
+	are booting, the downtime continues.
 
 1. Starting the new instances resolves the application outage and completes the Recreate strategy.
 
-This strategy is not recommended for applications that need high availability. You can use this strategy when the
-application cannot have different version running at the same time. Also use this strategy to execute data migrations
-or data transformations before the new version (applicaion / code) starts.
+This strategy is not recommended for applications that need high availability. You can use this strategy
+when the application cannot have different version running at the same time. Also use this strategy 
+to execute data migrations or data transformations before the new version (applicaion / code) starts.
 
 
 ### Rolling out Applications
@@ -1172,8 +1173,9 @@ When the deployment is updated OpenShift automatically rools put the application
 in a row, image update, environment variables, readiness probe then OpenShift will roll out the application for each
 modification.
 
-To prevent a multiple deployment update, pause the rollout, apply the modifications to the deployment object and
-then resume the rollout. OpenShift will then perform a single rollout to apply all the modifications.
+To prevent a multiple deployment update, pause the rollout, apply the modifications to the deployment
+object and then resume the rollout. OpenShift will then perform a single rollout to apply all the
+modifications.
 
 	'oc rollout pause deployment/myapp'
 	Pause the rollout for the deplyment "myapp"
@@ -1350,37 +1352,669 @@ To prevent this issue, use the OpenShift image streams for referencing images in
 
 ## REPRODUCIBLE DEPLOYMENTS WITH OPENSHIFT IMAGE STREAMS
 
-I'm here
 
 ### Image Streams
 
+An image stream provides a critical way for managing container images in OpenShift. Critical to provide
+a secure, consitent and efficient software chain. Removing application defintions from specific location
+and version, image stream provide a CI/CD pipeline and simplify image promotion and enhances security
+by controling which images are available for deployment.
+
+Image streams solves the problem of making sure that a pod reference to the same container image when
+it comes floating and non-floating tags. The main thing making sure that a rollback uses the correct image.
+
+Image streams are different between OpenShift and Kubernetes.
+
+- Kubernetes resources refer to container images directly
+- OpenShift resources refer to image streams
+
+OpenShift externs Kubernetes resources (Deloyment) with annotaion to allow then to use image streams.
+
+Using image streams OpenShift can ensure, stable deployment of applicaion and rollback.
+
+Image streams provide a stable, shortname to reference a container image, independeltly from any registry
+server and container runtime configuration.
+
+
 #### Image Stream Tags
+
+An image stream is one or more sets of container images. Each set, stream, is identified by an *image
+stream tag*.
+
+- A container image in a registry server can have multiple tags from the same image repository.
+- An image stream can have multiple image stream tags that reference container images from different
+	registry servers ans image repositories
+
+An image stream provides default configurations for a set of image streams tags. Each taf refers to one
+stream of container images and can override most configurations from its associated image stream.
+
+In the following illustration, a deployment that uses the Image-4 image can be rolled back to using
+the Image-3 image, because the ISTAG-B image stream tag keeps a history of used images:
+
+![From REDHAT Academy](openshift/openshift-image-streams.svg)
+
+Image stream have a copy of the metadata about the current image, including the SHA image ID. The SHA
+image ID is a unique identifier that the container registry computes and assigns to images. Storing
+metadata supports faster search and inspection of container images, because you do not need to reach
+its source registry server. 
+
+It is also able to configure an image stream tag to store the source image layers in the OpenShift internal
+container registry. Storing image layers locally avoids the need to fetch these layers from their source
+registry server. Consumers of the cached image, such as pods and deployments, reference the internal
+registry as the source registry of the image.
+
+	'oc get is -n openshift -o name' ->
+		...
+		imagestream.image.openshift.io/nodejs
+		imagestream.image.openshift.io/perl
+		imagestream.image.openshift.io/php
+		imagestream.image.openshift.io/postgresql
+		imagestream.image.openshift.io/python
+		...
+	
+	To better visualize the relationship between image streams and image stream tags, you can explore
+	the openshift project that is pre-created in all OpenShift clusters. You can see many image streams
+	in that project, including the php image stream
+	
+	'oc get istag -n openshift | grep php' ->
+		8.0-ubi9      image-registry ...    6 days ago
+		8.0-ubi8      image-registry ...    6 days ago
+		7.4-ubi8      image-registry ...    6 days ago
+		7.3-ubi7      image-registry ...    6 days ago
+	
+	Several tags exist for the php image stream, and an image stream tag resource exists for each tag
+	
+	'oc describe is php -n openshift' ->
+		Name:                   php
+		Namespace:              openshift
+		...output omitted...
+		Tags:                   5
+
+		8.0-ubi9
+		  tagged from registry.access.redhat.com/ubi9/php-80:latest
+		...
+
+		8.0-ubi8 (latest)
+		  tagged from registry.access.redhat.com/ubi8/php-80:latest
+		...
+
+		7.4-ubi8
+		  tagged from registry.access.redhat.com/ubi8/php-74:latest
+		...
+
+		7.3-ubi7
+		  tagged from registry.access.redhat.com/ubi7/php-73:latest
+		...
+	
+	The oc describe command on an image stream shows information from both the image stream and its
+	image stream tags
+	
+	In the previous example, each of the php image stream tags refers to a different image name.
 
 
 #### Image Names, Tags, and IDs
 
+The name of a container image is a string and has many part like the registry, repo, image name and often
+a tag.
+
+The SHA ID is a unique identifier for a immutable container image since acontainer image can not be
+modified. It is only possible to create a new image not modifing it and with it comes a new SHA ID.
+
+When starting a container you download an image connected with that name. The image ID behind that name
+might change at any moment, and the next container that you start might have a different image ID.
+If the image that is associated with an image name has any issues, and you know only the image name,
+then you cannot roll back to an earlier image.
+
+OpenShift image stream tags keep a history of the latest image IDs that they fetched from a registry
+server. The history of image IDs is the stream of images from an image stream tag. You can use the history
+inside an image stream tag to roll back to a previous image, if for example a new container image causes
+a deployment error.
+
+Updating a container image in an external registry does not automatically update an image stream tag.
+The image stream tag keeps the reference to the last image ID that it fetched. The image stream tag
+behavior is crucial to scaling applications, because it isolates OpenShift from changes that happen
+on a registry server.
+
+Suppose that you deploy an application from an external registry, and after a few days of testing with
+some users, you decide to scale its deployment to enable a larger user population. In the meantime,
+your vendor updates the container image on the external registry. If OpenShift had no image stream tags,
+then the new pods would get the new container image, which is different from the image on the original
+pod. Depending on the changes, this new image could cause your application to fail. Because OpenShift
+stores the image ID of the original image in an image stream tag, it can create pods by using the same
+image ID and avoid any incompatibility between the original and the updated image.
+
+OpenShift keeps the image ID of the first pod, and ensures that new pods use the same image ID.
+OpenShift ensures that all pods use the same image.
+
+	'oc describe is php -n openshift' ->
+		Name:                   php
+		Namespace:              openshift
+		...
+
+		8.0-ubi9
+		  tagged from registry.access.redhat.com/ubi9/php-80:latest
+		...
+		  * registry.access.redhat.com/ubi9/php-80@sha256:2b82...f544
+			  2 days ago
+
+		8.0-ubi8 (latest)
+		  tagged from registry.access.redhat.com/ubi8/php-80:latest
+		  * registry.access.redhat.com/ubi8/php-80@sha256:2c74...5ef4
+			  2 days ago
+		...
+
+	To better visualize the relationship between an image stream, an image stream tag, an image name,
+	and an image ID, refer to the following oc describe is command, which shows the source image and
+	current image ID for each image stream tag
+	
+	'oc describe is php -n openshift' ->
+		Name:                   php
+		Namespace:              openshift
+		...
+
+		8.0-ubi9
+		  tagged from registry.access.redhat.com/ubi9/php-80:latest
+		...
+		  * registry.access.redhat.com/ubi9/php-80@sha256:2b82...f544
+			  2 days ago
+			registry.access.redhat.com/ubi9/php-80@sha256:8840...94f0
+			  5 days ago
+			registry.access.redhat.com/ubi9/php-80@sha256:506c...5d90
+			  9 days ago
+			
+	If your OpenShift cluster administrator already updated the php:8.0-ubi9 image stream tag, the
+	oc describe is command shows multiple image IDs for that tag:
+	
+	In the previous example, the asterisk (*) shows which image ID is the current one for each image
+	stream tag. It is usually the latest one to be imported, and the first one that is listed.
+
+When an OpenShift image stream tag references a container image from an external registry, you must
+explicitly update the image stream tag to get new image IDs from the external registry. By default,
+OpenShift does not monitor external registries for changes to the image ID that is associated with an
+image name.
+
+You can configure an image stream tag to check the external registry for updates on a defined schedule.
+By default, new image stream tags do not check for updated images.
+
 
 #### Image Stream Use Cases
+
+Image streams provide an evolution approach for the container workflows of an organization, and can
+improve deployment reliability and resilience.
+
+As an example, an organization could start by downloading container images directly from the Red Hat
+public registry and later set up an enterprise registry as a mirror of those images to reduce bandwidth.
+OpenShift users would not notice any change, because they still refer to these images by using the
+same image stream name. Users of the RHEL container tools would notice the change, because those users
+would need either to change the registry names in their commands, or to change their container engine
+configurations to search for the local mirror first.
+
+A common enterprise use case for image streams is to manage the promotion of application images across
+different environments, such as for development, testing, and production. A CI/CD pipeline can build
+an image and push it to an image stream tag such as myapp:latest-dev. After automated tests pass, the
+same immutable image digest can be tagged into the testing environment's image stream, for example,
+as myapp:qa-stable. This use of the image stream tags ensures that the same artifact is tested. Finally,
+after successful QA, the image digest is tagged as myapp:prod-v1.2, triggering a production deployment.
+This process provides traceability and consistency throughout the application lifecycle.
+
+In other scenarios, the registry-agnostic flexibility that an image stream provides can be helpful. 
+Suppose that you start with a database container image with security issues, and the vendor takes too
+long to update the image with fixes. Later, you find another vendor who provides an alternative container
+image for the same database, where those security issues are already fixed, and even better, with a
+history of providing timely updates to them. If those container images have a compatible configuration
+of environment variables and volumes, then you could change your image stream to point to the image 
+from the alternative vendor.
+
+Red Hat provides hardened, supported container images, such as the MariaDB database, that work mostly
+as drop-in replacements of container images from popular open source projects. Replacing unreliable
+image sources with supported Red Hat alternatives, when available, is a preferred use of image streams.
 
 
 ### Creating Image Streams and Tags
 
+In addition to the image streams in the openshift project, you can create image streams in your project
+so that the resources in that project, such as Deployment objects, can use them.
+
+	'oc create is keycloak'
+	Use the oc create is command to create an image stream in the current project.
+	
+	'oc import-image keycloak:25.0 --from=quay.io/keycloak/keycloak:25.0.2 --confirm'
+	After you create the image stream, you can add image stream tags. A common method is to import
+	an image from a remote registry, which creates the image stream if it does not exist and adds
+	the tag.Use the oc import-image command for this purpose. The following example adds the 25.0
+	tag to the keycloak image stream. In this example, the image stream tag refers to the
+	quay.io/keycloak/keycloak:25.0.2 image from the Quay.io public repository.
+	
+	'oc tag quay.io/keycloak/keycloak:25.0.2 keycloak:25.0'
+	Alternatively, use the oc tag SOURCE-IMAGE IMAGE-STREAM-TAG command to add image stream tags to
+	an existing image stream.
+	
+	'oc tag quay.io/keycloak/keycloak:19.0 keycloak:19.0'
+	Repeat the preceding command if you need more image stream tags
+	
+	'oc tag quay.io/keycloak/keycloak:25.0.3 keycloak:25.0'
+	Use the oc tag command to update an image stream tag with a new source image reference. The
+	following example changes the keycloak:25.0 image stream tag to point to the 
+	quay.io/keycloak/keycloak:25.0.3 image
+	
+	'oc describe is keycloak' ->
+		Name:             keycloak
+		Namespace:        myproject
+		Created:          5 minutes ago
+		Labels:           <none>
+		Annotations:      openshift.io/image.dockerRepositoryCheck=2023-01-31T11:12:44Z
+		Image Repository: image-registry.openshift-image-registry.svc:5000/.../keycloak
+		Image Lookup:     local=false
+		Unique Images:    3
+		Tags:             2
+
+		25.0
+		  tagged from quay.io/keycloak/keycloak:25.0.3
+
+		  * quay.io/keycloak/keycloak@sha256:c167...62e9
+			  47 seconds ago
+			quay.io/keycloak/keycloak@sha256:5569...b311
+			  5 minutes ago
+
+		19.0
+		  tagged from quay.io/keycloak/keycloak:19.0
+
+		  * quay.io/keycloak/keycloak@sha256:40cc...ffde
+			  5 minutes ago
+	
+	Use the oc describe is command to verify that the image stream tag points to the SHA ID of the
+	source image
+
 
 #### Inspecting an Image Stream Definition
 
+To learn the structure of an image stream, you can inspect its YAML definition.
+
+	Example of image stream
+	-----
+	'oc get is/php -o yaml -n openshift' -> 
+		apiVersion: image.openshift.io/v1
+		kind: ImageStream
+		metadata:
+		...output omitted...
+		  name: php #1
+		  namespace: openshift #2
+		...output omitted...
+		spec:
+		  lookupPolicy:
+			local: false #3
+		  tags: #4
+		  - annotations:
+			  description: Build and run PHP 7.4 applications on UBI 8. For more information
+				about using this builder image, including OpenShift considerations, see https://github.com/sclorg/s2i-php-container/blob/master/7.4/README.md.
+		...output omitted...
+			  version: "7.4"
+			from:
+			  kind: DockerImage
+			  name: registry.ocp4.example.com:8443/ubi8/php-74:latest
+			generation: 2
+			importPolicy:
+			  importMode: Legacy
+			name: 7.4-ubi8
+			referencePolicy:
+			  type: Local
+		...output omitted...
+		status:
+		  dockerImageRepository: image-registry.openshift-image-registry.svc:5000/openshift/php #5
+		  tags: #6
+		  - items:
+			- created: "2025-09-12T09:34:46Z"
+			  dockerImageReference: registry.ocp4.example.com:8443/ubi8/php-74@sha256:32cb...f691 #7
+			  generation: 2
+			  image: sha256:32cb...f691
+			tag: 7.4-ubi8
+		  - items:
+			- created: "2025-09-12T09:34:46Z"
+			  dockerImageReference: registry.ocp4.example.com:8443/ubi8/php-80@sha256:0194...aff6
+			  generation: 2
+			  image: sha256:0194...aff6
+			tag: 8.0-ubi8
+		 ...
+	
+	Explaination of the image stream output
+	-----
+	#1: The name of the ImageStream object.
+	#2: The project where the image stream resides.
+	#3: The lookupPolicy controls whether this image stream can be used to satisfy short image names
+		in pod specifications within the same project.
+	#4: The spec.tags section defines the intended state, and lists each tag and its source image.
+	#5: The status.dockerImageRepository field shows the path to this image stream in the internal
+		RHOCP registry.
+	#6: The status.tags section shows the current state, including the history of image digests for
+		each tag.
+	#7: The dockerImageReference in the status section records the immutable digest (SHA ID) of the
+		image that was imported for the tag.
+
+
 #### Importing Image Stream Tags Periodically
+
+After the image stream tag is created OpenShift configure the SHA ID of the source image that was specified.
+After creation the stream tag does not change even if new version of the container image is pushed.
+
+By using image stream tags, you are in control of the images that your applications are using. If you
+want to use a new image version, then you must manually update the image stream tag to point to that
+new version.
+
+However, for some container registries that you trust, or for some specific images, you might prefer
+the image stream tags to refresh automatically.
+
+For example, Red Hat regularly updates the images from the Red Hat Ecosystem Catalog with bug and
+security fixes. To benefit from these updates as soon as Red Hat releases them, you can configure your image stream tags to refresh regularly.
+
+	'oc tag quay.io/keycloak/keycloak:25.0.3 keycloak:25.0 --scheduled'
+	OpenShift can periodically verify whether a new image version is available. When OpenShift
+	detects a new version, it automatically updates the image stream tag. To activate that periodic
+	refresh, add the --scheduled option to the oc tag command.
+
+By default, OpenShift verifies the image every 15 minutes. The refresh period is a setting that your
+cluster administrators can adapt.
 
 
 #### Configuring Image Pull-through
 
+When OpenShift starts a pod that uses an image stream tag, it pulls the corresponding image from the
+source container registry.
+
+When the image comes from a registry on the internet, pulling the image can take time, or even fail
+in the event of a network outage. Some public registries have bandwidth throttling rules that can slow
+down your downloads further.
+
+To mitigate these issues, you can configure your image stream tags to cache the images in the OpenShift
+internal container registry. The first time that OpenShift pulls the image, it downloads the image
+from the source repository and then stores the image in its internal registry. After that initial pull,
+OpenShift retrieves the image from the internal registry.
+
+	'oc tag quay.io/keycloak/keycloak:25.0.3 keycloak:25.0 --reference-policy local'
+	To activate image pull-through, add the --reference-policy local option to the oc tag command.
+
 
 ### Using Image Streams in Deployments
+
+When you create a Deployment object, you can specify an image stream instead of a container image
+from a registry. Using an image stream in Kubernetes workload resources, such as deployments,
+requires preparation:
+
+- Create the image stream object in the same project as the Deployment object.
+- Enable the local lookup policy in the image stream object.
+- In the Deployment object, reference the image stream tag by its name, such as keycloak:25.0, and
+	not by the full image name from the source registry.
 
 
 #### Enabling the Local Lookup Policy
 
+When you use an image stream in a Deployment object, OpenShift looks for that image stream in the
+current project. However, OpenShift considers only the image streams with an enabled local lookup policy.
+
+	'oc set image-lookup keycloak'
+	Use the oc set image-lookup command to enable the local lookup policy for an image stream
+	
+	'oc describe is keycloak' ->
+		Name:             keycloak
+		Namespace:        myproject
+		Created:          3 hours ago
+		Labels:           <none>
+		Annotations:      openshift.io/image.dockerRepositoryCheck=2023-01-31T11:12:44Z
+		Image Repository: image-registry.openshift-image-registry.svc:5000/.../keycloak
+		Image Lookup:     local=true
+		Unique Images:    3
+		Tags:             2
+		...
+	
+	Use the oc describe is command to verify that the policy is active
+	
+	'oc set image-lookup' ->
+		NAME          LOCAL
+		keycloak      true
+		zabbix-agent  false
+		nagios        false
+
+	You can also retrieve the local lookup policy status for all the image streams in the current
+	project by running the oc set image-lookup command without parameters
+
+	'oc set image-lookup keycloak --enabled=false'
+	To disable the local lookup policy, add the --enabled=false option to the oc set image-lookup
+	command
+
 #### Configuring Image Streams in Deployments
 
+	'oc create deployment mykeycloak --image keycloak:25.0'
+	When you create a Deployment object by using the oc create deployment command, use the --image
+	option to specify the image stream tag
 
+When you use a short name, OpenShift looks for a matching image stream in the current project.
+OpenShift considers only the image streams with an enabled local lookup policy. If it does not find
+an image stream, then OpenShift looks for a regular container image in the allowed container registries.
+The reference documentation at the end of this lecture describes how to configure these allowed registries.
+
+You can also use image streams with other Kubernetes workload resources
+
+	- Job objects, which you can create by using the following command
+	'oc create job NAME --image IMAGE-STREAM-TAG -- COMMAND'
+	
+	- CronJob objects, which you can create by using the following command:
+	'oc create cronjob NAME --image IMAGE-STREAM-TAG --schedule CRON-SYNTAX -- COMMAND'
+	
+	- Pod objects, which you can create by using the following command
+	'oc run NAME --image IMAGE-STREAM-TAG'
+
+Another section in this course discusses how changing an image stream tag can automatically roll out
+the associated deployments. The Automatic Image Updates with OpenShift Image Change Triggers chapter
+in this course discusses how updating an image stream tag triggers automatic rollouts of associated
+deployments.
+
+---
+
+## AUTOMATIC IMAGE UPDATE WITH OPENSHIFT IMAGE CHANGE TRIGGERS
+
+### Using Triggers to Manage Images
+
+Image stream tags record the SHA ID of the source container image. Thus, an image stream tag always
+points to an immutable image.
+
+If a new version of the source image becomes available, then you can change the image stream tag to
+point to that new image. However, a Deployment object that uses the image stream tag does not roll
+out automatically. For an automatic rollout, you must configure the Deployment object with an image
+trigger.
+
+If you update an image stream tag to point to a new image version, and you notice that this version
+does not work as expected, then you can revert the image stream tag. Deployment objects for which you
+configured a trigger automatically roll back to that previous image.
+
+Other Kubernetes workloads also support image triggers, such as Pod, CronJob, and Job objects.
+
+
+### Configuring Image Triggers for Deployments
+
+Before you can configure image triggers for a Deployment object, ensure that the Deployment object
+is using image stream tags for its containers:
+
+- Create the image stream object in the same project as the Deployment object.
+- Enable the local lookup policy in the image stream object by using the oc set image-lookup command.
+- In the Deployment object, reference the image stream tags by their names, such as keycloak:20, and
+	not by the full image names from the source registry.
+
+	'oc get deployment mykeycloak -o wide' ->
+		NAME         READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS ...
+		mykeycloak   0/1     1            0           6s    keycloak   ...
+	
+	Image triggers apply at the container level. If your Deployment object includes several
+	containers, then you can specify a trigger for each one. Before you can set triggers, retrieve 
+	the container names
+	
+	'oc set triggers deployment/mykeycloak --from-image keycloak:20 --containers keycloak'
+	Use the oc set triggers command to configure an image trigger for the container inside the
+	Deployment object. Use the --from-image option to specify the image stream tag to watch
+
+To provide automatic image rollout for Deployment objects, OpenShift adds the 
+image.openshift.io/triggers annotation to store the configuration in JSON format.
+
+	'oc get deployment mykeycloak \
+	-o jsonpath='{.metadata.annotations.image\.openshift\.io/triggers}' | jq .' ->
+		[
+		  {
+			"from": {
+			  "kind": "ImageStreamTag",
+			  "name": "keycloak:20"
+			},
+			"fieldPath": "spec.template.spec.containers[?(@.name==\"keycloak\")].image"
+		  }
+		]
+	
+	The following example retrieves the content of the image.openshift.io/triggers annotation, and
+	then uses the jq command to display the configuration in a more readable format
+
+The fieldPath attribute is a JSONPath expression that OpenShift uses to locate the attribute that
+stores the container image name. OpenShift updates that attribute with the new image name and SHA ID
+whenever the image stream tag changes.
+
+	Example of triggers
+	-----
+	'oc set triggers deployment/mykeycloak' ->
+		NAME                    TYPE    VALUE                   AUTO
+		deployments/mykeycloak  config                          true #1
+		deployments/mykeycloak  image   keycloak:20 (keycloak)  true #2
+	
+	Explanation to triggers
+	-----
+	#1: OpenShift uses the configuration trigger to roll out the deployment whenever you change its
+		configuration, such as to update environment variables or to configure the readiness probe.
+	#2: OpenShift watches the keycloak:20 image stream tag that the keycloak container uses.
+	
+	For a more concise view, use the oc set triggers command with the name of the Deployment 
+	object as an argument
+	
+	The true value under the AUTO column indicates that the trigger is enabled.
+	
+	You can disable the configuration trigger by using the oc rollout pause command, and you can
+	re-enable it by using the oc rollout resume command.
+	
+	'oc set triggers deployment/mykeycloak --manual --from-image keycloak:20 --containers keycloak'
+	You can disable the image trigger by adding the --manual option to the oc set triggers command
+	
+	'oc set triggers deployment/mykeycloak --auto --from-image keycloak:20 --containers keycloak'
+	You re-enable the trigger by using the --auto option
+	
+	'oc set triggers deployment/mykeycloak --remove-all'
+	You can remove the triggers from all the containers in the Deployment object by adding the
+	--remove-all option to the command
+
+
+#### Rolling out Deployments
+
+A Deployment object with an image trigger automatically rolls out when the image stream tag changes.
+
+The image stream tag might change because you manually update it to point to a new version of the
+source image. The image stream tag might also change automatically if you configure it for periodic
+refresh, by adding the --scheduled option to the oc tag command. When the image stream tag automatically
+changes, all the Deployment objects with a trigger that refers to that image stream tag also roll out.
+
+
+#### Rolling Back Deployments
+
+To roll back the Deployment objects, you revert the image stream tag. By reverting the image stream
+tag, OpenShift rolls out the Deployment object to use the previous image that the image stream tag
+is pointing to again.
+
+
+### Managing Image Stream Tags
+
+You can create image streams and image stream tags in several ways. The following three commands 
+perform the same operation. They all create the keycloak image stream if it does not exist, and then
+create the keycloak:20.0.2 image stream tag
+
+	'oc create istag keycloak:20.0.2 --from-image quay.io/keycloak/keycloak:20.0.2'
+
+	'oc import-image keycloak:20.0.2 --from quay.io/keycloak/keycloak:20.0.2 --confirm'
+
+	'oc tag quay.io/keycloak/keycloak:20.0.2 keycloak:20.0.2ä'
+
+You can rerun the oc import-image and oc tag commands to update the image stream tag from the source
+image. If the source image changes, then the commands update the image stream tag to point to that
+new version. However, you can use the oc create istag command only for the initial creation of the
+image stream tag. You cannot update tags by using the oc create istag command.
+
+The --help option shows more details about these commands.
+
+You can create several image stream tags that point to the same image. The following command creates
+the keycloak:20 image stream tag, which points to the same image as the keycloak:20.0.2 image stream
+tag. In this example, the keycloak:20 image stream tag is an alias for the keycloak:20.0.2 image
+stream tag.
+
+	'oc tag --alias keycloak:20.0.2 keycloak:20'
+
+The oc describe is command reports that both tags point to the same image
+
+	'oc describe is keycloak' ->
+		Name:       keycloak
+		Namespace:  myproject
+		...
+
+		20.0.2 (20)
+		  tagged from quay.io/keycloak/keycloak:20.0.2
+
+		  * quay.io/keycloak/keycloak@sha256:5569...b311
+			  3 minutes ago
+
+Using aliases for image tags is a similar concept to the use of floating tags for container images.
+Suppose that a new image version is available in the Quay.io repository. You can create an image stream
+tag for that new image:
+
+	'oc create istag keycloak:20.0.3 --from-image quay.io/keycloak/keycloak:20.0.3' ->
+		imagestreamtag.image.openshift.io/keycloak:20.0.3 created
+		[user@host ~]$ oc describe is keycloak
+		Name:       keycloak
+		Namespace:  myproject
+		...
+
+		20.0.3
+		  tagged from quay.io/keycloak/keycloak:20.0.3
+
+		  * quay.io/keycloak/keycloak@sha256:c167...62e9
+			  36 seconds ago
+
+		20.0.2 (20)
+		  tagged from quay.io/keycloak/keycloak:20.0.2
+
+		  * quay.io/keycloak/keycloak@sha256:5569...b311
+			  About an hour ago
+
+The keycloak:20 image stream tag does not change. Therefore, the Deployment objects that use that
+tag do not roll out.
+
+After testing the new image, you can move the keycloak:20 tag to point to the new image stream tag:
+
+	'oc tag --alias keycloak:20.0.3 keycloak:20' -> "Tag keycloak:20 set up to track keycloak:20.0.3.2
+
+	'oc describe is keycloak' ->
+		Name:       keycloak
+		Namespace:  myproject
+		...
+
+		20.0.3 (20)
+		  tagged from quay.io/keycloak/keycloak:20.0.3
+
+		  * quay.io/keycloak/keycloak@sha256:c167...62e9
+			  10 minutes ago
+
+		20.0.2
+		  tagged from quay.io/keycloak/keycloak:20.0.2
+
+		  * quay.io/keycloak/keycloak@sha256:5569...b311
+			  About an hour ago
+
+Because the keycloak:20 image stream tag points to a new image, OpenShift rolls out all the Deployment
+objects that use that tag. These new deployments that use the new image should be tested to ensure
+that they perform as expected. If the new application does not work as expected, you can roll back
+the deployments by resetting the keycloak:20 tag to the previous image stream tag, as shown here:
+
+	'oc tag --alias keycloak:20.0.2 keycloak:20'
+
+By providing a level of abstraction, image streams give you control over managing the container images
+that you use in your OpenShift cluster.
 
 
